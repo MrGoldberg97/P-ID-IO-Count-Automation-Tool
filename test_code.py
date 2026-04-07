@@ -4,6 +4,7 @@ import sqlite3
 import os
 import hashlib
 import copy
+import json
 from dataclasses import dataclass, field
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import FreeText as PdfFreeTextAnnotation
@@ -2242,7 +2243,6 @@ def _build_complete_tag(tag_parts: dict, signal_name: str = "") -> str:
 
 def db_save_markers(pdf_path: str, markers: list[dict]) -> None:
     """Replace all markers for this PDF with the current list."""
-    import json
     
     with _db_connect() as con:
         row = con.execute(
@@ -2280,7 +2280,6 @@ def db_save_markers(pdf_path: str, markers: list[dict]) -> None:
         
 def db_load_markers(pdf_path: str) -> list[dict]:
     """Return saved markers for this PDF, or empty list if none."""
-    import json
     
     with _db_connect() as con:
         rows = con.execute(
@@ -2508,7 +2507,6 @@ def db_save_signal_composition(title: str, description: str,
             ]
         )
     """
-    import json
     from datetime import datetime
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     extra_headers_json = json.dumps(extra_column_headers or [])
@@ -2533,8 +2531,8 @@ def db_save_signal_composition(title: str, description: str,
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
                  sig.get("signal_description", ""),
-                 sig.get("prefix", "NA") or "NA",
-                 sig.get("suffix", "NA") or "NA",
+                 sig.get("prefix") or "NA",
+                 sig.get("suffix") or "NA",
                  extra_values_json,
                  order))
         
@@ -2559,7 +2557,6 @@ def db_load_signal_composition(composition_id: int) -> dict:
                          "prefix", "suffix", "extra_column_values": [str, ...]}, ...]
         }
     """
-    import json
     with _db_connect() as con:
         # Load composition
         comp = con.execute(
@@ -2707,7 +2704,6 @@ def db_update_signal_composition(composition_id: int, title: str,
     """
     Update an existing signal composition.
     """
-    import json
     from datetime import datetime
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     extra_headers_json = json.dumps(extra_column_headers or [])
@@ -2737,8 +2733,8 @@ def db_update_signal_composition(composition_id: int, title: str,
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
                  sig.get("signal_description", ""),
-                 sig.get("prefix", "NA") or "NA",
-                 sig.get("suffix", "NA") or "NA",
+                 sig.get("prefix") or "NA",
+                 sig.get("suffix") or "NA",
                  extra_values_json,
                  order))
         
@@ -5213,6 +5209,7 @@ class SignalCompositionConfigDialog(QDialog):
         # Description fields — first field always present; more via button
         right_lay.addWidget(QLabel("Description:"))
         self._desc_fields: list = []
+        self._desc_buttons: list = []
         self._desc_container = QWidget()
         self._desc_layout = QVBoxLayout(self._desc_container)
         self._desc_layout.setContentsMargins(0, 0, 0, 0)
@@ -5410,8 +5407,8 @@ class SignalCompositionConfigDialog(QDialog):
                 self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
                 count_item = QTableWidgetItem(str(sig.get("count", 1)))
                 self.signals_table.setItem(r, 3, count_item)
-                self.signals_table.setItem(r, 4, QTableWidgetItem(sig.get("prefix", "NA") or "NA"))
-                self.signals_table.setItem(r, 5, QTableWidgetItem(sig.get("suffix", "NA") or "NA"))
+                self.signals_table.setItem(r, 4, QTableWidgetItem(sig.get("prefix") or "NA"))
+                self.signals_table.setItem(r, 5, QTableWidgetItem(sig.get("suffix") or "NA"))
                 resulting = self._calculate_resulting_signal(sig["signal_type"], sig.get("count", 1))
                 result_item = QTableWidgetItem(resulting)
                 result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -5552,12 +5549,16 @@ class SignalCompositionConfigDialog(QDialog):
             "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
             " border-radius:3px; font-size: 8pt; }"
             "QPushButton:hover { background:#5A1A1A; }")
-        rm_btn.setVisible(len(self._desc_fields) > 0)
         rm_btn.clicked.connect(lambda: self._remove_desc_field(row_lay, edit))
         row_lay.addWidget(edit)
         row_lay.addWidget(rm_btn)
         self._desc_layout.addLayout(row_lay)
         self._desc_fields.append(edit)
+        self._desc_buttons.append(rm_btn)
+        # Show remove buttons on all fields only when there are 2 or more
+        show = len(self._desc_fields) > 1
+        for btn in self._desc_buttons:
+            btn.setVisible(show)
         if hasattr(self, '_add_desc_btn'):
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
 
@@ -5565,7 +5566,9 @@ class SignalCompositionConfigDialog(QDialog):
         """Remove a description line field (keep at least one)."""
         if len(self._desc_fields) <= 1:
             return
+        idx = self._desc_fields.index(edit)
         self._desc_fields.remove(edit)
+        self._desc_buttons.pop(idx)
         while row_lay.count():
             item = row_lay.takeAt(0)
             if item.widget():
@@ -5573,6 +5576,10 @@ class SignalCompositionConfigDialog(QDialog):
         self._desc_layout.removeItem(row_lay)
         for i, e in enumerate(self._desc_fields):
             e.setPlaceholderText(f"Description {i + 1}…")
+        # Hide remove buttons if only one field remains
+        show = len(self._desc_fields) > 1
+        for btn in self._desc_buttons:
+            btn.setVisible(show)
         if hasattr(self, '_add_desc_btn'):
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
 
@@ -5588,6 +5595,7 @@ class SignalCompositionConfigDialog(QDialog):
                     if widget_item.widget():
                         widget_item.widget().deleteLater()
         self._desc_fields = []
+        self._desc_buttons = []
         if hasattr(self, '_add_desc_btn'):
             self._add_desc_btn.setEnabled(True)
         self._add_desc_field()  # always keep at least one slot
@@ -5681,8 +5689,7 @@ class SignalCompositionConfigDialog(QDialog):
             
             self._clear_form()
             self.title_edit.setText(new_title.strip())
-            if self._desc_fields:  # _reset_desc_fields() (called by _clear_form) guarantees this
-                self._desc_fields[0].setText(template.get("description", ""))
+            self._desc_fields[0].setText(template.get("description", ""))
             
             # Populate signals from template
             self.signals_table.blockSignals(True)
@@ -6936,9 +6943,9 @@ class MarkerInfoDialog(QDialog):
             signals_table.setItem(row, 2, QTableWidgetItem(
                 sig.get("signal_description", "")))
             signals_table.setItem(row, 3, QTableWidgetItem(
-                sig.get("prefix", "NA") or "NA"))
+                sig.get("prefix") or "NA"))
             signals_table.setItem(row, 4, QTableWidgetItem(
-                sig.get("suffix", "NA") or "NA"))
+                sig.get("suffix") or "NA"))
         
         signals_table.setMaximumHeight(min(200, len(composition["signals"]) * 25 + 30))
         lay.addWidget(signals_table, stretch=1)
