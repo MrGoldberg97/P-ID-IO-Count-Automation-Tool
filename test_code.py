@@ -5470,7 +5470,40 @@ class SignalCompositionConfigDialog(QDialog):
         self.desc_edit.setPlaceholderText("e.g., 2/2 Solenoid Valve")
         self.desc_edit.setMaximumHeight(60)
         right_lay.addWidget(self.desc_edit)
-        
+
+        # Control Module and Transmitter fields (mandatory)
+        cm_tx_lay = QHBoxLayout()
+
+        cm_lay = QVBoxLayout()
+        cm_lay.setSpacing(2)
+        cm_label = QLabel("<b>Control Module*:</b>")
+        self.control_module_combo = QComboBox()
+        self.control_module_combo.setEditable(True)
+        self.control_module_combo.addItems(["NA"])
+        self.control_module_combo.setCurrentText("NA")
+        self.control_module_combo.setToolTip(
+            "Enter the control module identifier or select NA")
+        cm_lay.addWidget(cm_label)
+        cm_lay.addWidget(self.control_module_combo)
+
+        tx_lay = QVBoxLayout()
+        tx_lay.setSpacing(2)
+        tx_label = QLabel("<b>Transmitter*:</b>")
+        self.transmitter_combo = QComboBox()
+        self.transmitter_combo.setEditable(True)
+        self.transmitter_combo.addItems(["NA"])
+        self.transmitter_combo.setCurrentText("NA")
+        self.transmitter_combo.setToolTip(
+            "Enter the transmitter identifier or select NA")
+        tx_lay.addWidget(tx_label)
+        tx_lay.addWidget(self.transmitter_combo)
+
+        cm_tx_lay.addLayout(cm_lay)
+        cm_tx_lay.addSpacing(12)
+        cm_tx_lay.addLayout(tx_lay)
+        cm_tx_lay.addStretch()
+        right_lay.addLayout(cm_tx_lay)
+
         # Composition display
         right_lay.addWidget(QLabel("<b>Composition:</b>"))
         self.composition_display = QLabel("")
@@ -5561,6 +5594,8 @@ class SignalCompositionConfigDialog(QDialog):
             self._current_comp_id = comp_id
             self.title_edit.setText(comp["title"])
             self.desc_edit.setPlainText(comp["description"])
+            self.control_module_combo.setCurrentText(comp.get("control_module", "NA"))
+            self.transmitter_combo.setCurrentText(comp.get("transmitter", "NA"))
             self._populate_signals_table(comp["signals"])
             self._update_composition_display()
         else:
@@ -5571,6 +5606,8 @@ class SignalCompositionConfigDialog(QDialog):
         self._current_comp_id = None
         self.title_edit.clear()
         self.desc_edit.clear()
+        self.control_module_combo.setCurrentText("NA")
+        self.transmitter_combo.setCurrentText("NA")
         self.signals_table.setRowCount(0)
         self.composition_display.setText("")
     
@@ -5775,7 +5812,21 @@ class SignalCompositionConfigDialog(QDialog):
                     self, "Validation Error",
                     "All compositions must have a title.")
                 return
-            
+
+            if not comp.get("control_module", "").strip():
+                QMessageBox.warning(
+                    self, "Validation Error",
+                    f"Composition '{comp['title']}': Control Module is mandatory. "
+                    "Enter a value or select NA.")
+                return
+
+            if not comp.get("transmitter", "").strip():
+                QMessageBox.warning(
+                    self, "Validation Error",
+                    f"Composition '{comp['title']}': Transmitter is mandatory. "
+                    "Enter a value or select NA.")
+                return
+
             if not comp["signals"]:
                 QMessageBox.warning(
                     self, "Validation Error",
@@ -5798,7 +5849,9 @@ class SignalCompositionConfigDialog(QDialog):
                     comp["id"] = db_save_signal_composition(
                         title=comp["title"],
                         description=comp["description"],
-                        signals=comp["signals"]
+                        signals=comp["signals"],
+                        control_module=comp.get("control_module", "NA"),
+                        transmitter=comp.get("transmitter", "NA")
                     )
                     # Assign to owner
                     db_assign_composition_to_owner(comp["id"], self._owner_id)
@@ -5808,7 +5861,9 @@ class SignalCompositionConfigDialog(QDialog):
                         composition_id=comp["id"],
                         title=comp["title"],
                         description=comp["description"],
-                        signals=comp["signals"]
+                        signals=comp["signals"],
+                        control_module=comp.get("control_module", "NA"),
+                        transmitter=comp.get("transmitter", "NA")
                     )
             except Exception as e:
                 QMessageBox.warning(self, "Error", str(e))
@@ -5862,6 +5917,8 @@ class SignalCompositionConfigDialog(QDialog):
                 "id": None,  # New composition - no ID yet
                 "title": title,
                 "description": "",
+                "control_module": "NA",
+                "transmitter": "NA",
                 "signals": []
             }
             self._compositions.append(comp_to_update)
@@ -5869,9 +5926,11 @@ class SignalCompositionConfigDialog(QDialog):
         # Update the composition
         comp_to_update["title"] = title
         comp_to_update["description"] = self.desc_edit.toPlainText().strip()
+        comp_to_update["control_module"] = self.control_module_combo.currentText().strip() or "NA"
+        comp_to_update["transmitter"] = self.transmitter_combo.currentText().strip() or "NA"
         comp_to_update["signals"] = signals
         
-        self._current_comp_id = comp_to_update["id"]                
+        self._current_comp_id = comp_to_update["id"]
 # ---------------------------------------------------------------------------
 # ProjectMetadataDialog — create or edit a project
 # ---------------------------------------------------------------------------
