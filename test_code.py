@@ -1912,7 +1912,7 @@ def _db_connect() -> sqlite3.Connection:
     except Exception as e:
         print(f"signal_compositions column migration error (non-fatal): {e}")
 
-    # ── Migrate signal_composition_signals: add prefix / suffix columns ────
+    # ── Migrate signal_composition_signals: add prefix / suffix / extra_column_values columns ──
     try:
         existing_sig_cols = [
             row[1]
@@ -1930,8 +1930,29 @@ def _db_connect() -> sqlite3.Connection:
                 "ADD COLUMN suffix TEXT NOT NULL DEFAULT 'NA'"
             )
             con.commit()
+        if "extra_column_values" not in existing_sig_cols:
+            con.execute(
+                "ALTER TABLE signal_composition_signals "
+                "ADD COLUMN extra_column_values TEXT NOT NULL DEFAULT '[]'"
+            )
+            con.commit()
     except Exception as e:
         print(f"signal_composition_signals column migration error (non-fatal): {e}")
+
+    # ── Migrate signal_compositions: add extra_column_headers column ──────
+    try:
+        existing_comp_cols = [
+            row[1]
+            for row in con.execute("PRAGMA table_info(signal_compositions)").fetchall()
+        ]
+        if "extra_column_headers" not in existing_comp_cols:
+            con.execute(
+                "ALTER TABLE signal_compositions "
+                "ADD COLUMN extra_column_headers TEXT NOT NULL DEFAULT '[]'"
+            )
+            con.commit()
+    except Exception as e:
+        print(f"signal_compositions extra_column_headers migration error (non-fatal): {e}")
 
     # ── Other tables (these should be fine) ───────────────────────────────
     con.execute("""
@@ -1943,6 +1964,7 @@ def _db_connect() -> sqlite3.Connection:
             signal_description TEXT NOT NULL DEFAULT '',
             prefix          TEXT    NOT NULL DEFAULT 'NA',
             suffix          TEXT    NOT NULL DEFAULT 'NA',
+            extra_column_values TEXT NOT NULL DEFAULT '[]',
             sort_order      INTEGER NOT NULL DEFAULT 0
         )
     """)
@@ -2459,16 +2481,18 @@ def db_get_or_create_project_owner(project_id: int) -> int:
 def db_save_signal_composition(title: str, description: str,
                               signals: list[dict],
                               control_module: str = "NA",
-                              transmitter: str = "NA") -> int:
+                              transmitter: str = "NA",
+                              extra_column_headers: list = None) -> int:
     """
     Save a new signal composition.
     
     Args:
         title: Composition name (e.g., "On-Off Valve")
         description: Optional description
-        signals: List of dicts: [{signal_name, signal_type, signal_description}, ...]
+        signals: List of dicts: [{signal_name, signal_type, signal_description, ...}, ...]
         control_module: Control module identifier or "NA"
         transmitter: Transmitter identifier or "NA"
+        extra_column_headers: Optional list of user-defined column header names
         
     Returns:
         composition_id
@@ -2484,30 +2508,34 @@ def db_save_signal_composition(title: str, description: str,
             ]
         )
     """
+    import json
     from datetime import datetime
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    extra_headers_json = json.dumps(extra_column_headers or [])
     
     with _db_connect() as con:
         # Insert composition
         cur = con.execute(
             "INSERT INTO signal_compositions "
-            "(title, description, control_module, transmitter, created, modified) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(title, description, control_module, transmitter, extra_column_headers, created, modified) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (title, description or "", control_module or "NA",
-             transmitter or "NA", now, now))
+             transmitter or "NA", extra_headers_json, now, now))
         composition_id = cur.lastrowid
         
         # Insert signals
         for order, sig in enumerate(signals):
+            extra_values_json = json.dumps(sig.get("extra_column_values", []))
             con.execute(
                 "INSERT INTO signal_composition_signals "
                 "(composition_id, signal_name, signal_type, signal_description, "
-                "prefix, suffix, sort_order) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "prefix, suffix, extra_column_values, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
                  sig.get("signal_description", ""),
                  sig.get("prefix", "NA") or "NA",
                  sig.get("suffix", "NA") or "NA",
+                 extra_values_json,
                  order))
         
         con.commit()
@@ -2526,13 +2554,16 @@ def db_load_signal_composition(composition_id: int) -> dict:
             "description": str,
             "control_module": str,
             "transmitter": str,
-            "signals": [{"signal_name", "signal_type", "signal_description"}, ...]
+            "extra_column_headers": [str, ...],
+            "signals": [{"signal_name", "signal_type", "signal_description",
+                         "prefix", "suffix", "extra_column_values": [str, ...]}, ...]
         }
     """
+    import json
     with _db_connect() as con:
         # Load composition
         comp = con.execute(
-            "SELECT id, title, description, control_module, transmitter "
+            "SELECT id, title, description, control_module, transmitter, extra_column_headers "
             "FROM signal_compositions WHERE id = ?",
             (composition_id,)).fetchone()
         
@@ -2541,7 +2572,7 @@ def db_load_signal_composition(composition_id: int) -> dict:
         
         # Load signals
         signals = con.execute(
-            "SELECT signal_name, signal_type, signal_description, prefix, suffix "
+            "SELECT signal_name, signal_type, signal_description, prefix, suffix, extra_column_values "
             "FROM signal_composition_signals WHERE composition_id = ? "
             "ORDER BY sort_order",
             (composition_id,)).fetchall()
@@ -2552,6 +2583,7 @@ def db_load_signal_composition(composition_id: int) -> dict:
         "description": comp[2] or "",
         "control_module": comp[3] or "NA",
         "transmitter": comp[4] or "NA",
+        "extra_column_headers": json.loads(comp[5] or "[]"),
         "signals": [
             {
                 "signal_name": s[0],
@@ -2559,6 +2591,7 @@ def db_load_signal_composition(composition_id: int) -> dict:
                 "signal_description": s[2] or "",
                 "prefix": s[3] or "NA",
                 "suffix": s[4] or "NA",
+                "extra_column_values": json.loads(s[5] or "[]"),
             }
             for s in signals
         ]
@@ -2669,21 +2702,25 @@ def db_delete_signal_composition(composition_id: int) -> None:
 def db_update_signal_composition(composition_id: int, title: str,
                                 description: str, signals: list[dict],
                                 control_module: str = "NA",
-                                transmitter: str = "NA") -> None:
+                                transmitter: str = "NA",
+                                extra_column_headers: list = None) -> None:
     """
     Update an existing signal composition.
     """
+    import json
     from datetime import datetime
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    extra_headers_json = json.dumps(extra_column_headers or [])
     
     with _db_connect() as con:
         # Update composition header
         con.execute(
             "UPDATE signal_compositions "
-            "SET title = ?, description = ?, control_module = ?, transmitter = ?, modified = ? "
+            "SET title = ?, description = ?, control_module = ?, transmitter = ?, "
+            "extra_column_headers = ?, modified = ? "
             "WHERE id = ?",
             (title, description or "", control_module or "NA",
-             transmitter or "NA", now, composition_id))
+             transmitter or "NA", extra_headers_json, now, composition_id))
         
         # Delete old signals
         con.execute(
@@ -2692,15 +2729,17 @@ def db_update_signal_composition(composition_id: int, title: str,
         
         # Insert new signals
         for order, sig in enumerate(signals):
+            extra_values_json = json.dumps(sig.get("extra_column_values", []))
             con.execute(
                 "INSERT INTO signal_composition_signals "
                 "(composition_id, signal_name, signal_type, signal_description, "
-                "prefix, suffix, sort_order) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "prefix, suffix, extra_column_values, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
                  sig.get("signal_description", ""),
                  sig.get("prefix", "NA") or "NA",
                  sig.get("suffix", "NA") or "NA",
+                 extra_values_json,
                  order))
         
         con.commit()
@@ -5085,6 +5124,8 @@ class SignalCompositionConfigDialog(QDialog):
     No longer uses Default owner - all compositions are project-specific.
     """
     
+    _FIXED_COL_COUNT = 7  # Signal Name, Type, Desc, Count, Prefix, Suffix, Resulting Signal
+    
     def __init__(self, owner_id: int, owner_name: str, parent=None):
         """
         Args:
@@ -5251,14 +5292,23 @@ class SignalCompositionConfigDialog(QDialog):
         self.signals_table.itemChanged.connect(self._update_resulting_signal)
         right_lay.addWidget(self.signals_table, stretch=1)
         
-        # Signal buttons
+        # Signal row and column buttons
         sig_btn_lay = QHBoxLayout()
         add_sig_btn = QPushButton("➕ Add Signal")
         rem_sig_btn = QPushButton("🗑 Remove Signal")
+        add_col_btn = QPushButton("➕ Add Column")
+        rem_col_btn = QPushButton("🗑 Remove Column")
         add_sig_btn.clicked.connect(self._add_signal_row)
         rem_sig_btn.clicked.connect(self._remove_signal_row)
+        add_col_btn.clicked.connect(self._add_extra_column)
+        rem_col_btn.clicked.connect(self._remove_extra_column)
+        add_col_btn.setToolTip("Add a custom description/comment column to the right of the table")
+        rem_col_btn.setToolTip("Remove a custom description/comment column")
         sig_btn_lay.addWidget(add_sig_btn)
         sig_btn_lay.addWidget(rem_sig_btn)
+        sig_btn_lay.addSpacing(16)
+        sig_btn_lay.addWidget(add_col_btn)
+        sig_btn_lay.addWidget(rem_col_btn)
         sig_btn_lay.addStretch()
         right_lay.addLayout(sig_btn_lay)
         
@@ -5320,26 +5370,37 @@ class SignalCompositionConfigDialog(QDialog):
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
             self.control_module_combo.setCurrentText(comp.get("control_module", "NA"))
             self.transmitter_combo.setCurrentText(comp.get("transmitter", "NA"))
+            # Reset to fixed columns then restore any extra columns saved with this composition
+            self.signals_table.blockSignals(True)
+            self.signals_table.setColumnCount(self._FIXED_COL_COUNT)
+            self.signals_table.setRowCount(0)
+            self.signals_table.blockSignals(False)
+            for header in comp.get("extra_column_headers", []):
+                self._add_extra_column(header)
             self._populate_signals_table(comp["signals"])
             self._update_composition_display()
         else:
             self._clear_form()
     
     def _clear_form(self):
-        """Clear all form fields."""
+        """Clear all form fields and reset the signals table to fixed columns only."""
         self._current_comp_id = None
         self.title_edit.clear()
         self._reset_desc_fields()
         self.control_module_combo.setCurrentText("NA")
         self.transmitter_combo.setCurrentText("NA")
+        self.signals_table.blockSignals(True)
+        self.signals_table.setColumnCount(self._FIXED_COL_COUNT)
         self.signals_table.setRowCount(0)
+        self.signals_table.blockSignals(False)
         self.composition_display.setText("")
     
     def _populate_signals_table(self, signals: list[dict]):
-        """Fill the signals table with 7 columns."""
+        """Fill the signals table (fixed columns + any extra columns already set up)."""
         self.signals_table.blockSignals(True)
         try:
             self.signals_table.setRowCount(0)
+            extra_count = self.signals_table.columnCount() - self._FIXED_COL_COUNT
             for sig in signals:
                 r = self.signals_table.rowCount()
                 self.signals_table.insertRow(r)
@@ -5355,12 +5416,18 @@ class SignalCompositionConfigDialog(QDialog):
                 result_item = QTableWidgetItem(resulting)
                 result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self.signals_table.setItem(r, 6, result_item)
+                # Extra columns
+                extra_values = sig.get("extra_column_values", [])
+                for ec in range(extra_count):
+                    val = extra_values[ec] if ec < len(extra_values) else ""
+                    self.signals_table.setItem(
+                        r, self._FIXED_COL_COUNT + ec, QTableWidgetItem(val))
         finally:
             self.signals_table.blockSignals(False)
         self._update_composition_display()
     
     def _add_signal_row(self):
-        """Add an empty signal row."""
+        """Add an empty signal row (fills all fixed and any extra columns)."""
         r = self.signals_table.rowCount()
         self.signals_table.insertRow(r)
         self.signals_table.blockSignals(True)
@@ -5372,6 +5439,9 @@ class SignalCompositionConfigDialog(QDialog):
             result_item = QTableWidgetItem("")
             result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.signals_table.setItem(r, 6, result_item)
+            # Fill any extra columns with empty text
+            for ec in range(self.signals_table.columnCount() - self._FIXED_COL_COUNT):
+                self.signals_table.setItem(r, self._FIXED_COL_COUNT + ec, QTableWidgetItem(""))
         finally:
             self.signals_table.blockSignals(False)
     
@@ -5522,6 +5592,59 @@ class SignalCompositionConfigDialog(QDialog):
             self._add_desc_btn.setEnabled(True)
         self._add_desc_field()  # always keep at least one slot
 
+    def _add_extra_column(self, header: str = "") -> None:
+        """Add a user-defined extra column to the right of the signals table.
+
+        If *header* is empty the user is prompted for a column name.
+        Existing rows automatically get an empty cell in the new column.
+        """
+        if not header:
+            header, ok = QInputDialog.getText(
+                self, "Add Column",
+                "Enter column header (e.g., 'DI Comment', 'IO Remark'):")
+            if not ok or not header.strip():
+                return
+            header = header.strip()
+        col = self.signals_table.columnCount()
+        self.signals_table.setColumnCount(col + 1)
+        self.signals_table.setHorizontalHeaderItem(col, QTableWidgetItem(header))
+        self.signals_table.horizontalHeader().setSectionResizeMode(
+            col, QHeaderView.ResizeMode.Stretch)
+        # Fill existing rows with empty text
+        for r in range(self.signals_table.rowCount()):
+            self.signals_table.setItem(r, col, QTableWidgetItem(""))
+
+    def _remove_extra_column(self) -> None:
+        """Remove a user-defined extra column from the signals table.
+
+        If more than one extra column exists the user is prompted to choose which to remove.
+        """
+        extra_count = self.signals_table.columnCount() - self._FIXED_COL_COUNT
+        if extra_count <= 0:
+            QMessageBox.information(
+                self, "No Extra Columns",
+                "There are no extra columns to remove.\n"
+                "Only the built-in fixed columns are present.")
+            return
+
+        # Collect extra column header names
+        headers = []
+        for c in range(self._FIXED_COL_COUNT, self.signals_table.columnCount()):
+            item = self.signals_table.horizontalHeaderItem(c)
+            headers.append(item.text() if item else f"Column {c - self._FIXED_COL_COUNT + 1}")
+
+        if extra_count == 1:
+            col_to_remove = self._FIXED_COL_COUNT
+        else:
+            choice, ok = QInputDialog.getItem(
+                self, "Remove Column",
+                "Select the column to remove:", headers, 0, False)
+            if not ok:
+                return
+            col_to_remove = self._FIXED_COL_COUNT + headers.index(choice)
+
+        self.signals_table.removeColumn(col_to_remove)
+
     def _use_template(self):
         """Load a template and use it as basis for new composition."""
         template_dlg = SignalCompositionTemplateDialog(self)
@@ -5653,7 +5776,8 @@ class SignalCompositionConfigDialog(QDialog):
                         description=comp["description"],
                         signals=comp["signals"],
                         control_module=comp.get("control_module", "NA"),
-                        transmitter=comp.get("transmitter", "NA")
+                        transmitter=comp.get("transmitter", "NA"),
+                        extra_column_headers=comp.get("extra_column_headers", [])
                     )
                     # Assign to owner
                     db_assign_composition_to_owner(comp["id"], self._owner_id)
@@ -5665,7 +5789,8 @@ class SignalCompositionConfigDialog(QDialog):
                         description=comp["description"],
                         signals=comp["signals"],
                         control_module=comp.get("control_module", "NA"),
-                        transmitter=comp.get("transmitter", "NA")
+                        transmitter=comp.get("transmitter", "NA"),
+                        extra_column_headers=comp.get("extra_column_headers", [])
                     )
             except Exception as e:
                 QMessageBox.warning(self, "Error", str(e))
@@ -5674,12 +5799,18 @@ class SignalCompositionConfigDialog(QDialog):
         self.accept()
         
     def _save_current_composition(self):
-        """Save the currently edited composition."""
+        """Save the currently edited composition into self._compositions."""
         title = self.title_edit.text().strip()
         if not title:
             return
         
-        # Collect signals with the 7-column format
+        # Collect extra column headers from the table
+        extra_column_headers = []
+        for ec in range(self._FIXED_COL_COUNT, self.signals_table.columnCount()):
+            hdr_item = self.signals_table.horizontalHeaderItem(ec)
+            extra_column_headers.append(hdr_item.text() if hdr_item else "")
+        
+        # Collect signals (fixed fields + per-row extra column values)
         signals = []
         for r in range(self.signals_table.rowCount()):
             sig_name = (self.signals_table.item(r, 0) or QTableWidgetItem()).text().strip()
@@ -5688,6 +5819,10 @@ class SignalCompositionConfigDialog(QDialog):
             count_str = (self.signals_table.item(r, 3) or QTableWidgetItem()).text().strip()
             prefix = (self.signals_table.item(r, 4) or QTableWidgetItem()).text().strip() or "NA"
             suffix = (self.signals_table.item(r, 5) or QTableWidgetItem()).text().strip() or "NA"
+            extra_column_values = [
+                (self.signals_table.item(r, self._FIXED_COL_COUNT + ec) or QTableWidgetItem()).text().strip()
+                for ec in range(len(extra_column_headers))
+            ]
             
             if sig_name and sig_type and sig_desc:
                 try:
@@ -5702,6 +5837,7 @@ class SignalCompositionConfigDialog(QDialog):
                     "count": count,
                     "prefix": prefix,
                     "suffix": suffix,
+                    "extra_column_values": extra_column_values,
                 })
         
         if not signals:
@@ -5725,6 +5861,7 @@ class SignalCompositionConfigDialog(QDialog):
                 "description": "",
                 "control_module": "NA",
                 "transmitter": "NA",
+                "extra_column_headers": [],
                 "signals": []
             }
             self._compositions.append(comp_to_update)
@@ -5736,6 +5873,7 @@ class SignalCompositionConfigDialog(QDialog):
         comp_to_update["description"] = description
         comp_to_update["control_module"] = self.control_module_combo.currentText().strip() or "NA"
         comp_to_update["transmitter"] = self.transmitter_combo.currentText().strip() or "NA"
+        comp_to_update["extra_column_headers"] = extra_column_headers
         comp_to_update["signals"] = signals
         
         self._current_comp_id = comp_to_update["id"]
