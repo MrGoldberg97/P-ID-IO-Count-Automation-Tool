@@ -205,17 +205,16 @@ class MarkerEditDialog(QDialog):
         obj_name_lbl.setStyleSheet("font-size: 10pt; color:#7EC8F0;")
         form.addRow("<b>Composition:</b>", obj_name_lbl)
 
-        if composition['description']:
-            comment_lbl = QLabel(composition['description'])
-            comment_lbl.setStyleSheet("color:#AAAAAA; font-size: 9pt;")
-            form.addRow("", comment_lbl)
+        if composition.get("description"):
+            first_line = composition["description"].split("\n")[0]
+            if first_line:
+                comment_lbl = QLabel(first_line)
+                comment_lbl.setStyleSheet("color:#AAAAAA; font-size: 9pt;")
+                form.addRow("", comment_lbl)
 
-        # ── Count field ────────────────────────────────────────────────
-        form.addRow(QLabel("<b>Tag Configuration:</b>"))
-
+        # Count field
         tag_parts = marker.get("tag_parts", {})
 
-        # Count
         count_widget = QWidget()
         count_layout = QHBoxLayout(count_widget)
         count_layout.setContentsMargins(0, 0, 0, 0)
@@ -226,158 +225,17 @@ class MarkerEditDialog(QDialog):
         self.count_spin.setMaximum(999)
         self.count_spin.setValue(int(tag_parts.get("count", marker.get("count", 1))))
         self.count_spin.setMaximumWidth(80)
-        self.count_spin.valueChanged.connect(self._update_composition_preview)
         count_layout.addWidget(self.count_spin)
         count_layout.addWidget(QLabel("(multiplier for all signals)"))
         count_layout.addStretch()
         form.addRow("<b>Count:</b>", count_widget)
 
-        # Prefix
-        self.prefix_edit = QLineEdit(tag_parts.get("prefix", ""))
-        self.prefix_edit.setPlaceholderText("e.g., 7600")
-        self.prefix_edit.setMaximumWidth(150)
-        self.prefix_edit.textChanged.connect(self._update_composition_preview)
-        form.addRow("<b>Prefix:</b>", self.prefix_edit)
-
-        # Suffix
-        self.suffix_edit = QLineEdit(tag_parts.get("suffix", ""))
-        self.suffix_edit.setPlaceholderText("e.g., B")
-        self.suffix_edit.setMaximumWidth(150)
-        self.suffix_edit.textChanged.connect(self._update_composition_preview)
-        form.addRow("<b>Suffix:</b>", self.suffix_edit)
-
-        # Middle fields
-        self._middle_field_edits = []
-
-        middle_widget = QWidget()
-        self.middle_fields_layout_edit = QVBoxLayout(middle_widget)
-        self.middle_fields_layout_edit.setSpacing(4)
-        self.middle_fields_layout_edit.setContentsMargins(0, 0, 0, 0)
-
-        existing_middle = tag_parts.get("middle_fields", [])
-        for field_value in existing_middle:
-            self._add_middle_field_edit(field_value)
-
-        form.addRow("<b>Middle Fields:</b>", middle_widget)
-
-        # Middle field buttons
-        middle_btn_widget = QWidget()
-        middle_btn_layout = QHBoxLayout(middle_btn_widget)
-        middle_btn_layout.setContentsMargins(0, 0, 0, 0)
-        middle_btn_layout.setSpacing(6)
-
-        add_middle_btn = QPushButton("➕ Add Field")
-        add_middle_btn.setMaximumWidth(120)
-        add_middle_btn.clicked.connect(lambda: self._add_middle_field_edit(""))
-
-        clear_middle_btn = QPushButton("🗑 Clear")
-        clear_middle_btn.setMaximumWidth(80)
-        clear_middle_btn.clicked.connect(self._clear_middle_fields_edit)
-
-        middle_btn_layout.addWidget(add_middle_btn)
-        middle_btn_layout.addWidget(clear_middle_btn)
-        middle_btn_layout.addStretch()
-        form.addRow("", middle_btn_widget)
-
-        # Signals preview
-        form.addRow(QLabel("<b>Complete tags for each signal:</b>"))
-
-        self.signals_preview_list = QListWidget()
-        self.signals_preview_list.setMaximumHeight(180)
-        self.signals_preview_list.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.signals_preview_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.NoSelection)
-
-        form.addRow("", self.signals_preview_list)
-
-        self._update_composition_preview()
-        
-    def _add_middle_field_edit(self, value: str = ""):
-        """Add a middle field editor in the edit dialog."""
-        field_num = len(self._middle_field_edits) + 1
-        field_layout = QHBoxLayout()
-        
-        label = QLabel(f"F{field_num}:")
-        label.setMaximumWidth(30)
-        
-        field_edit = QLineEdit(value)
-        field_edit.setPlaceholderText("e.g., 014")
-        field_edit.setMaximumWidth(100)
-        field_edit.textChanged.connect(self._update_composition_preview)
-        
-        remove_btn = QPushButton("✕")
-        remove_btn.setMaximumWidth(30)
-        remove_btn.setStyleSheet(
-            "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
-            " border-radius:3px; font-size: 8pt; }"
-            "QPushButton:hover { background:#5A1A1A; }")
-        remove_btn.clicked.connect(lambda: self._remove_middle_field_edit(field_edit))
-        
-        field_layout.addWidget(label)
-        field_layout.addWidget(field_edit)
-        field_layout.addWidget(remove_btn)
-        field_layout.addStretch()
-        
-        self.middle_fields_layout_edit.addLayout(field_layout)
-        self._middle_field_edits.append(field_edit)
-
-    def _remove_middle_field_edit(self, field_edit: QLineEdit):
-        """Remove a middle field from the edit dialog."""
-        if field_edit in self._middle_field_edits:
-            self._middle_field_edits.remove(field_edit)
-            field_edit.deleteLater()
-            self._update_composition_preview()
-
-    def _clear_middle_fields_edit(self):
-        """Clear all middle fields in the edit dialog."""
-        for field_edit in self._middle_field_edits:
-            field_edit.deleteLater()
-        self._middle_field_edits.clear()
-        self._update_composition_preview()
-
-    def _update_composition_preview(self):
-        """Update the signals preview in the edit dialog."""
-        if not hasattr(self, 'signals_preview_list'):
-            return
-        
-        self.signals_preview_list.clear()
-        
-        composition_id = self._marker.get("composition_id")
-        composition = db_load_signal_composition(composition_id) if composition_id else None
-        
-        if not composition:
-            return
-        
-        prefix = self.prefix_edit.text().strip()
-        suffix = self.suffix_edit.text().strip()
-        middle_fields = [f.text().strip() for f in self._middle_field_edits if f.text().strip()]
-        
-        for sig in composition['signals']:
-            # Build tag: prefix-SIGNAL-middle_fields-suffix
-            parts = []
-            
-            if prefix:
-                parts.append(prefix)
-            
-            parts.append(sig['signal_name'])
-            
-            if middle_fields:
-                parts.extend(middle_fields)
-            
-            if suffix:
-                parts.append(suffix)
-            
-            signal_tag = "-".join(parts)
-            display = f"{signal_tag}  ({sig['signal_type']})  —  {sig.get('signal_description', '')}"
-            self.signals_preview_list.addItem(display)
-    
-    def _update_complex_signals_table(self, table: QTableWidget, complex_obj: dict):
-        """Update the signals table when base tag changes."""
-        base_tag = self.base_tag_edit.text().strip()
-        for r, sig in enumerate(complex_obj['signals']):
-            full_tag = f"{base_tag}-{sig['signal']}" if base_tag else sig['signal']
-            table.item(r, 0).setText(full_tag)
+    @property
+    def tag_parts(self) -> dict:
+        """Return the tag parts for composition markers."""
+        return {
+            "count": self.count_spin.value(),
+        }
 
     def _on_type_changed(self, text: str) -> None:
         """Auto-fill description from config when user picks a predefined type."""
@@ -436,16 +294,6 @@ class MarkerEditDialog(QDialog):
     def selected_description(self) -> str:
         parts = [e.text().strip() for e in self._desc_edits if e.text().strip()]
         return " | ".join(parts)
-    
-    @property
-    def tag_parts(self) -> dict:
-        """Return the tag parts for composition markers."""
-        return {
-            "prefix": self.prefix_edit.text().strip(),
-            "middle_fields": [f.text().strip() for f in self._middle_field_edits if f.text().strip()],
-            "suffix": self.suffix_edit.text().strip(),
-            "count": self.count_spin.value(),
-        }
 
 
     # ---------------------------------------------------------------------------
@@ -4777,35 +4625,20 @@ def _get_projects_for_pdf(pdf_path: str) -> list[dict]:
 class CompositionPlacementDialog(QDialog):
     """
     Dialog for placing a signal composition on the PDF.
-    Allows users to:
-    - Configure optional tag parts (prefix, middle fields, suffix)
-    - Set a multiplier count (e.g., 2x means all signals are multiplied by 2)
-    
-    Example: "On-Off Valve" (1HDO 2HDI) with count=3 becomes "3HDO 6HDI"
+    Allows the user to set a multiplier count
+    (e.g., 2× means all signals are multiplied by 2).
     """
     
     def __init__(self, composition: dict, parent=None, tag_parts: dict = None):
         super().__init__(parent)
         self.setWindowTitle(f"Place {composition['title']}")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(380)
         self.setStyleSheet(
             "* { background-color: #1E1E1E; color: #F0F0F0; }"
             "QDialog { background: #1E1E1E; }"
             "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
             "QSpinBox { background: #2B2B2B; color: #F0F0F0;"
             " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QListWidget { background: #252525; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; }"
-            "QListWidget::item { padding: 3px; }"
             "QPushButton { background: #3A3A3A; color: #F0F0F0;"
             " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
             "QPushButton:hover { background: #4A4A4A; }"
@@ -4814,21 +4647,22 @@ class CompositionPlacementDialog(QDialog):
         )
         
         self._composition = composition
-        self._middle_fields = []
-        self._initial_tag_parts = tag_parts or {}
         
-        # Header with composition
+        # Header
         composition_text = _get_signal_composition(composition)
-        title = QLabel(f"<b>{composition['title']}</b>  <span style='color:#7EC8F0;'>{composition_text}</span>")
-        title.setStyleSheet("font-size: 11pt; color:#7EC8F0;")
+        title_lbl = QLabel(
+            f"<b>{composition['title']}</b>  "
+            f"<span style='color:#7EC8F0;'>{composition_text}</span>")
+        title_lbl.setStyleSheet("font-size: 11pt;")
         
-        if composition['description']:
-            comment_lbl = QLabel(composition['description'])
-            comment_lbl.setStyleSheet("color:#AAAAAA; font-size: 9pt;")
-        else:
-            comment_lbl = None
+        desc_lbl = None
+        if composition.get("description"):
+            first_line = composition["description"].split("\n")[0]
+            if first_line:
+                desc_lbl = QLabel(first_line)
+                desc_lbl.setStyleSheet("color:#AAAAAA; font-size: 9pt;")
         
-        # ── Count Field (NEW) ────────────────────────────────────────────
+        # Count field
         count_layout = QHBoxLayout()
         count_layout.addWidget(QLabel("<b>Count (multiplier):</b>"))
         self.count_spin = QSpinBox()
@@ -4836,196 +4670,30 @@ class CompositionPlacementDialog(QDialog):
         self.count_spin.setMaximum(999)
         self.count_spin.setValue(tag_parts.get("count", 1) if tag_parts else 1)
         self.count_spin.setMaximumWidth(80)
-        self.count_spin.valueChanged.connect(self._update_preview)
         count_layout.addWidget(self.count_spin)
         count_layout.addWidget(QLabel("(all signals will be multiplied by this count)"))
         count_layout.addStretch()
         
-        # ── Tag Configuration Section (All Optional) ───────────────────────
-        tag_config_lbl = QLabel("<b>Tag Configuration (all optional):</b>")
-        tag_hint = QLabel("Signal names will be automatically included.")
-        tag_hint.setStyleSheet("color:#999999; font-size: 8pt;")
-        
-        # Prefix field
-        prefix_layout = QHBoxLayout()
-        prefix_layout.addWidget(QLabel("Prefix:"))
-        self.prefix_edit = QLineEdit()
-        self.prefix_edit.setPlaceholderText("e.g., 7600 (optional)")
-        self.prefix_edit.setMaximumWidth(150)
-        prefix_layout.addWidget(self.prefix_edit)
-        prefix_layout.addStretch()
-        
-        # Suffix field
-        suffix_layout = QHBoxLayout()
-        suffix_layout.addWidget(QLabel("Suffix:"))
-        self.suffix_edit = QLineEdit()
-        self.suffix_edit.setPlaceholderText("e.g., B (optional)")
-        self.suffix_edit.setMaximumWidth(150)
-        suffix_layout.addWidget(self.suffix_edit)
-        suffix_layout.addStretch()
-        
-        # Middle fields container
-        self.middle_fields_layout = QVBoxLayout()
-        self.middle_fields_layout.setSpacing(4)
-        
-        # Add/Remove middle field buttons
-        middle_btn_layout = QHBoxLayout()
-        add_middle_btn = QPushButton("➕ Add Field")
-        add_middle_btn.setToolTip("Add another field (e.g., 014)")
-        add_middle_btn.clicked.connect(self._add_middle_field)
-        clear_middle_btn = QPushButton("🗑 Clear Fields")
-        clear_middle_btn.setToolTip("Remove all middle fields")
-        clear_middle_btn.clicked.connect(self._clear_middle_fields)
-        middle_btn_layout.addWidget(add_middle_btn)
-        middle_btn_layout.addWidget(clear_middle_btn)
-        middle_btn_layout.addStretch()
-        
-        # Signals preview
-        preview_lbl = QLabel("<b>Complete tags for each signal (after multiplying by count):</b>")
-        self.signals_list = QListWidget()
-        self.signals_list.setMaximumHeight(200)
-        self.signals_list.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers)
-        
-        # Connect fields to update preview
-        self.prefix_edit.textChanged.connect(self._update_preview)
-        self.suffix_edit.textChanged.connect(self._update_preview)
-        
-        # Main layout
-        lay = QVBoxLayout()
-        lay.setContentsMargins(16, 14, 16, 10)
-        lay.setSpacing(10)
-        
-        lay.addWidget(title)
-        if comment_lbl:
-            lay.addWidget(comment_lbl)
-        
-        lay.addLayout(count_layout)
-        lay.addWidget(tag_config_lbl)
-        lay.addWidget(tag_hint)
-        lay.addLayout(prefix_layout)
-        lay.addLayout(suffix_layout)
-        lay.addWidget(QLabel("Middle Fields (optional):"))
-        lay.addLayout(self.middle_fields_layout)
-        lay.addLayout(middle_btn_layout)
-        
-        lay.addWidget(preview_lbl)
-        lay.addWidget(self.signals_list, stretch=1)
-        
-        # Buttons
+        # OK / Cancel
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
                               QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
+        
+        lay = QVBoxLayout()
+        lay.setContentsMargins(16, 14, 16, 10)
+        lay.setSpacing(10)
+        lay.addWidget(title_lbl)
+        if desc_lbl:
+            lay.addWidget(desc_lbl)
+        lay.addLayout(count_layout)
         lay.addWidget(bb)
-        
         self.setLayout(lay)
-
-        # Pre-populate fields if editing existing marker
-        if tag_parts:
-            self.prefix_edit.setText(tag_parts.get("prefix", ""))
-            self.suffix_edit.setText(tag_parts.get("suffix", ""))
-            for field_value in tag_parts.get("middle_fields", []):
-                self._add_middle_field(field_value)
-
-        self._update_preview()
-    
-    def _add_middle_field(self, value: str = ""):
-        """Add a new middle field input."""
-        field_num = len(self._middle_fields) + 1
-        field_layout = QHBoxLayout()
-        
-        label = QLabel(f"Field {field_num}:")
-        label.setMaximumWidth(60)
-        
-        field_edit = QLineEdit(value)
-        field_edit.setPlaceholderText("e.g., 014")
-        field_edit.setMaximumWidth(120)
-        field_edit.textChanged.connect(self._update_preview)
-        
-        remove_btn = QPushButton("✕")
-        remove_btn.setMaximumWidth(30)
-        remove_btn.setStyleSheet(
-            "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
-            " border-radius:3px; font-size: 8pt; }"
-            "QPushButton:hover { background:#5A1A1A; }")
-        remove_btn.clicked.connect(lambda: self._remove_middle_field(field_edit))
-        
-        field_layout.addWidget(label)
-        field_layout.addWidget(field_edit)
-        field_layout.addWidget(remove_btn)
-        field_layout.addStretch()
-        
-        self.middle_fields_layout.addLayout(field_layout)
-        self._middle_fields.append(field_edit)
-        self._update_preview()
-    
-    def _remove_middle_field(self, field_edit: QLineEdit):
-        """Remove a specific middle field."""
-        if field_edit in self._middle_fields:
-            self._middle_fields.remove(field_edit)
-            field_edit.deleteLater()
-            self._update_preview()
-    
-    def _clear_middle_fields(self):
-        """Remove all middle fields."""
-        while self._middle_fields:
-            field = self._middle_fields.pop()
-            field.deleteLater()
-        
-        while self.middle_fields_layout.count():
-            item = self.middle_fields_layout.takeAt(0)
-            if item and isinstance(item, QHBoxLayout):
-                while item.count():
-                    w = item.takeAt(0).widget()
-                    if w:
-                        w.deleteLater()
-        
-        self._update_preview()
-    
-    def _update_preview(self):
-        """Update the signals list with complete tags (multiplied by count)."""
-        self.signals_list.clear()
-        
-        count = self.count_spin.value()
-        prefix = self.prefix_edit.text().strip()
-        suffix = self.suffix_edit.text().strip()
-        middle_fields = [f.text().strip() for f in self._middle_fields if f.text().strip()]
-        
-        for sig in self._composition['signals']:
-            # Multiply signal count by user's multiplier
-            original_count = 1  # Each signal appears once in the composition
-            multiplied_count = original_count * count
-            
-            # Build tag: prefix-<count>SIGNAL-fields-suffix
-            parts = []
-            
-            if prefix:
-                parts.append(prefix)
-            
-            # Include the multiplied count in the signal name
-            signal_display = f"{multiplied_count}{sig['signal_name']}" if multiplied_count > 1 else sig['signal_name']
-            parts.append(signal_display)
-            
-            if middle_fields:
-                parts.extend(middle_fields)
-            
-            if suffix:
-                parts.append(suffix)
-            
-            signal_tag = "-".join(parts)
-            display = f"{signal_tag}  ({sig['signal_type']})  —  {sig.get('signal_description', '')}"
-            self.signals_list.addItem(display)
     
     @property
     def tag_parts(self) -> dict:
-        """Return all tag parts."""
-        return {
-            "prefix": self.prefix_edit.text().strip(),
-            "middle_fields": [f.text().strip() for f in self._middle_fields if f.text().strip()],
-            "suffix": self.suffix_edit.text().strip(),
-            "count": self.count_spin.value(),  # ← NEW: include count
-        }
+        """Return tag parts (count only)."""
+        return {"count": self.count_spin.value()}
     
     @property
     def count(self) -> int:
@@ -5501,11 +5169,20 @@ class SignalCompositionConfigDialog(QDialog):
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText("e.g., On-Off Valve")
         right_lay.addWidget(self.title_edit)
-        
-        self.desc_edit = QPlainTextEdit()
-        self.desc_edit.setPlaceholderText("e.g., 2/2 Solenoid Valve")
-        self.desc_edit.setMaximumHeight(60)
-        right_lay.addWidget(self.desc_edit)
+
+        # Description fields — first field always present; more via button
+        right_lay.addWidget(QLabel("Description:"))
+        self._desc_fields: list = []
+        self._desc_container = QWidget()
+        self._desc_layout = QVBoxLayout(self._desc_container)
+        self._desc_layout.setContentsMargins(0, 0, 0, 0)
+        self._desc_layout.setSpacing(4)
+        self._add_desc_field()  # always show at least one field
+        right_lay.addWidget(self._desc_container)
+
+        self._add_desc_btn = QPushButton("➕ Add Description")
+        self._add_desc_btn.clicked.connect(lambda: self._add_desc_field())
+        right_lay.addWidget(self._add_desc_btn)
 
         # Control Module and Transmitter fields (mandatory)
         cm_tx_lay = QHBoxLayout()
@@ -5546,12 +5223,13 @@ class SignalCompositionConfigDialog(QDialog):
         self.composition_display.setStyleSheet("color: #7EC8F0; font-weight: bold; font-size: 11pt;")
         right_lay.addWidget(self.composition_display)
         
-        # NEW: Signals table with 5 columns
+        # Signals table with 7 columns
         right_lay.addWidget(QLabel("<b>Signals Configuration:</b>"))
         
-        self.signals_table = QTableWidget(0, 5)
+        self.signals_table = QTableWidget(0, 7)
         self.signals_table.setHorizontalHeaderLabels(
-            ["Signal Name*", "Signal Type*", "Signal Description*", "Count*", "Resulting Signal on PDF"])
+            ["Signal Name*", "Signal Type*", "Signal Description*",
+             "Count*", "Prefix*", "Suffix*", "Resulting Signal on PDF"])
         self.signals_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents)
         self.signals_table.horizontalHeader().setSectionResizeMode(
@@ -5561,7 +5239,11 @@ class SignalCompositionConfigDialog(QDialog):
         self.signals_table.horizontalHeader().setSectionResizeMode(
             3, QHeaderView.ResizeMode.ResizeToContents)
         self.signals_table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.Stretch)
+            4, QHeaderView.ResizeMode.ResizeToContents)
+        self.signals_table.horizontalHeader().setSectionResizeMode(
+            5, QHeaderView.ResizeMode.ResizeToContents)
+        self.signals_table.horizontalHeader().setSectionResizeMode(
+            6, QHeaderView.ResizeMode.Stretch)
         self.signals_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows)
         self.signals_table.setSelectionMode(
@@ -5629,7 +5311,19 @@ class SignalCompositionConfigDialog(QDialog):
         if comp:
             self._current_comp_id = comp_id
             self.title_edit.setText(comp["title"])
-            self.desc_edit.setPlainText(comp["description"])
+            # Populate description fields
+            desc_lines = [l for l in comp["description"].split("\n") if l] if comp["description"] else []
+            # Reset to one field
+            for edit in self._desc_fields[1:]:
+                edit.deleteLater()
+            self._desc_fields = self._desc_fields[:1]
+            if desc_lines:
+                self._desc_fields[0].setText(desc_lines[0])
+                for line in desc_lines[1:]:
+                    self._add_desc_field(line)
+            else:
+                self._desc_fields[0].clear()
+            self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
             self.control_module_combo.setCurrentText(comp.get("control_module", "NA"))
             self.transmitter_combo.setCurrentText(comp.get("transmitter", "NA"))
             self._populate_signals_table(comp["signals"])
@@ -5641,14 +5335,20 @@ class SignalCompositionConfigDialog(QDialog):
         """Clear all form fields."""
         self._current_comp_id = None
         self.title_edit.clear()
-        self.desc_edit.clear()
+        # Reset description to one empty field
+        for edit in self._desc_fields[1:]:
+            edit.deleteLater()
+        self._desc_fields = self._desc_fields[:1]
+        if self._desc_fields:
+            self._desc_fields[0].clear()
+        self._add_desc_btn.setEnabled(True)
         self.control_module_combo.setCurrentText("NA")
         self.transmitter_combo.setCurrentText("NA")
         self.signals_table.setRowCount(0)
         self.composition_display.setText("")
     
     def _populate_signals_table(self, signals: list[dict]):
-        """Fill the signals table with 5 columns."""
+        """Fill the signals table with 7 columns."""
         self.signals_table.setRowCount(0)
         for sig in signals:
             r = self.signals_table.rowCount()
@@ -5663,24 +5363,32 @@ class SignalCompositionConfigDialog(QDialog):
             # Count
             count_item = QTableWidgetItem(str(sig.get("count", 1)))
             self.signals_table.setItem(r, 3, count_item)
-            # Resulting Signal (read-only, calculated)
+            # Prefix
+            self.signals_table.setItem(r, 4, QTableWidgetItem(sig.get("prefix", "NA") or "NA"))
+            # Suffix
+            self.signals_table.setItem(r, 5, QTableWidgetItem(sig.get("suffix", "NA") or "NA"))
+            # Resulting Signal (read-only, calculated) — col 6
             resulting = self._calculate_resulting_signal(sig["signal_type"], sig.get("count", 1))
             result_item = QTableWidgetItem(resulting)
             result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.signals_table.setItem(r, 4, result_item)
+            self.signals_table.setItem(r, 6, result_item)
     
     def _add_signal_row(self):
         """Add an empty signal row."""
         r = self.signals_table.rowCount()
         self.signals_table.insertRow(r)
         
-        for col in range(4):  # First 4 columns are editable
+        for col in range(4):  # cols 0-3 editable (name, type, desc, count)
             self.signals_table.setItem(r, col, QTableWidgetItem(""))
         
-        # Add read-only resulting signal cell
+        # Prefix and Suffix default to "NA"
+        self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
+        self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
+        
+        # Resulting signal at col 6 (read-only)
         result_item = QTableWidgetItem("")
         result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        self.signals_table.setItem(r, 4, result_item)
+        self.signals_table.setItem(r, 6, result_item)
     
     def _remove_signal_row(self):
         """Remove the selected signal row."""
@@ -5713,7 +5421,7 @@ class SignalCompositionConfigDialog(QDialog):
                 count = 1
             
             resulting = self._calculate_resulting_signal(sig_type, count)
-            result_item = self.signals_table.item(row, 4)
+            result_item = self.signals_table.item(row, 6)  # col 6
             if result_item:
                 result_item.setText(resulting)
         
@@ -5774,8 +5482,44 @@ class SignalCompositionConfigDialog(QDialog):
             self._compositions = [c for c in self._compositions if c["id"] != comp_id]
             self._populate_list()
             self._clear_form()
-    
-    def _use_template(self):
+
+    def _add_desc_field(self, text: str = "") -> None:
+        """Add a description line field (max 5)."""
+        if len(self._desc_fields) >= 5:
+            return
+        row_lay = QHBoxLayout()
+        row_lay.setContentsMargins(0, 0, 0, 0)
+        edit = QLineEdit(text)
+        edit.setPlaceholderText(f"Description {len(self._desc_fields) + 1}…")
+        rm_btn = QPushButton("✕")
+        rm_btn.setFixedWidth(24)
+        rm_btn.setStyleSheet(
+            "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
+            " border-radius:3px; font-size: 8pt; }"
+            "QPushButton:hover { background:#5A1A1A; }")
+        rm_btn.setVisible(len(self._desc_fields) > 0)
+        rm_btn.clicked.connect(lambda: self._remove_desc_field(row_lay, edit))
+        row_lay.addWidget(edit)
+        row_lay.addWidget(rm_btn)
+        self._desc_layout.addLayout(row_lay)
+        self._desc_fields.append(edit)
+        if hasattr(self, '_add_desc_btn'):
+            self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
+
+    def _remove_desc_field(self, row_lay: QHBoxLayout, edit: QLineEdit) -> None:
+        """Remove a description line field (keep at least one)."""
+        if len(self._desc_fields) <= 1:
+            return
+        self._desc_fields.remove(edit)
+        while row_lay.count():
+            item = row_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._desc_layout.removeItem(row_lay)
+        for i, e in enumerate(self._desc_fields):
+            e.setPlaceholderText(f"Description {i + 1}…")
+        if hasattr(self, '_add_desc_btn'):
+            self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
         """Load a template and use it as basis for new composition."""
         template_dlg = SignalCompositionTemplateDialog(self)
         if template_dlg.exec() != QDialog.DialogCode.Accepted:
@@ -5823,11 +5567,13 @@ class SignalCompositionConfigDialog(QDialog):
                 self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
                 self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
                 self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
+                self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
+                self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
                 
                 resulting = self._calculate_resulting_signal(sig["signal_type"], 1)
                 result_item = QTableWidgetItem(resulting)
                 result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.signals_table.setItem(r, 4, result_item)
+                self.signals_table.setItem(r, 6, result_item)
             
             self._current_comp_id = None  # Mark as new composition
             self._update_composition_display()
@@ -5876,6 +5622,18 @@ class SignalCompositionConfigDialog(QDialog):
                         self, "Validation Error",
                         f"In composition '{comp['title']}': Signal Name, Type, and Description are mandatory.")
                     return
+                if not sig.get("prefix", "").strip():
+                    QMessageBox.warning(
+                        self, "Validation Error",
+                        f"In composition '{comp['title']}': Prefix is mandatory per signal. "
+                        "Enter a value or use NA.")
+                    return
+                if not sig.get("suffix", "").strip():
+                    QMessageBox.warning(
+                        self, "Validation Error",
+                        f"In composition '{comp['title']}': Suffix is mandatory per signal. "
+                        "Enter a value or use NA.")
+                    return
         
         # Save to database
         for comp in self._compositions:
@@ -5913,13 +5671,15 @@ class SignalCompositionConfigDialog(QDialog):
         if not title:
             return
         
-        # Collect signals with the new 5-column format
+        # Collect signals with the 7-column format
         signals = []
         for r in range(self.signals_table.rowCount()):
             sig_name = (self.signals_table.item(r, 0) or QTableWidgetItem()).text().strip()
             sig_type = (self.signals_table.item(r, 1) or QTableWidgetItem()).text().strip()
             sig_desc = (self.signals_table.item(r, 2) or QTableWidgetItem()).text().strip()
             count_str = (self.signals_table.item(r, 3) or QTableWidgetItem()).text().strip()
+            prefix = (self.signals_table.item(r, 4) or QTableWidgetItem()).text().strip() or "NA"
+            suffix = (self.signals_table.item(r, 5) or QTableWidgetItem()).text().strip() or "NA"
             
             if sig_name and sig_type and sig_desc:
                 try:
@@ -5931,7 +5691,9 @@ class SignalCompositionConfigDialog(QDialog):
                     "signal_name": sig_name,
                     "signal_type": sig_type,
                     "signal_description": sig_desc,
-                    "count": count
+                    "count": count,
+                    "prefix": prefix,
+                    "suffix": suffix,
                 })
         
         if not signals:
@@ -5961,7 +5723,9 @@ class SignalCompositionConfigDialog(QDialog):
         
         # Update the composition
         comp_to_update["title"] = title
-        comp_to_update["description"] = self.desc_edit.toPlainText().strip()
+        description = "\n".join(
+            e.text().strip() for e in self._desc_fields if e.text().strip())
+        comp_to_update["description"] = description
         comp_to_update["control_module"] = self.control_module_combo.currentText().strip() or "NA"
         comp_to_update["transmitter"] = self.transmitter_combo.currentText().strip() or "NA"
         comp_to_update["signals"] = signals
@@ -6971,36 +6735,32 @@ class MarkerInfoDialog(QDialog):
     def _add_composition_info(self, lay: QVBoxLayout, marker: dict, composition: dict):
         """Add composition-specific information to the dialog."""
         
-        # ── Count and Configuration ──────────────────────────────────────
+        # ── Composition metadata ─────────────────────────────────────────
         lay.addWidget(QLabel("<b>Configuration:</b>"))
-        
+
         tag_parts = marker.get("tag_parts", {})
         count = tag_parts.get("count", 1)
-        prefix = tag_parts.get("prefix", "")
-        suffix = tag_parts.get("suffix", "")
-        middle_fields = tag_parts.get("middle_fields", [])
-        
-        config_table = QTableWidget(4, 2)
-        config_table.setColumnWidth(0, 120)
-        config_table.setColumnWidth(1, 200)
+
+        config_table = QTableWidget(3, 2)
+        config_table.setColumnWidth(0, 140)
+        config_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch)
         config_table.horizontalHeader().setVisible(False)
         config_table.verticalHeader().setVisible(False)
         config_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        
-        config_table.setItem(0, 0, QTableWidgetItem("Count:"))
+
+        config_table.setItem(0, 0, QTableWidgetItem("Count (multiplier):"))
         config_table.setItem(0, 1, QTableWidgetItem(str(count)))
-        
-        config_table.setItem(1, 0, QTableWidgetItem("Prefix:"))
-        config_table.setItem(1, 1, QTableWidgetItem(prefix if prefix else "(none)"))
-        
-        config_table.setItem(2, 0, QTableWidgetItem("Middle Fields:"))
-        middle_str = ", ".join(middle_fields) if middle_fields else "(none)"
-        config_table.setItem(2, 1, QTableWidgetItem(middle_str))
-        
-        config_table.setItem(3, 0, QTableWidgetItem("Suffix:"))
-        config_table.setItem(3, 1, QTableWidgetItem(suffix if suffix else "(none)"))
-        
-        config_table.setMaximumHeight(120)
+
+        config_table.setItem(1, 0, QTableWidgetItem("Control Module:"))
+        config_table.setItem(1, 1, QTableWidgetItem(
+            composition.get("control_module", "NA") or "NA"))
+
+        config_table.setItem(2, 0, QTableWidgetItem("Transmitter:"))
+        config_table.setItem(2, 1, QTableWidgetItem(
+            composition.get("transmitter", "NA") or "NA"))
+
+        config_table.setMaximumHeight(90)
         lay.addWidget(config_table)
         
         lay.addWidget(self._divider())
@@ -7008,15 +6768,19 @@ class MarkerInfoDialog(QDialog):
         # ── Signals table ────────────────────────────────────────────────
         lay.addWidget(QLabel("<b>Signals in Composition:</b>"))
         
-        signals_table = QTableWidget(len(composition["signals"]), 3)
+        signals_table = QTableWidget(len(composition["signals"]), 5)
         signals_table.setHorizontalHeaderLabels(
-            ["Signal Name", "Signal Type", "Description"])
+            ["Signal Name", "Signal Type", "Description", "Prefix", "Suffix"])
         signals_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents)
         signals_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.ResizeToContents)
         signals_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch)
+        signals_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.ResizeToContents)
+        signals_table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.ResizeToContents)
         signals_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         signals_table.verticalHeader().setVisible(False)
         
@@ -7025,6 +6789,10 @@ class MarkerInfoDialog(QDialog):
             signals_table.setItem(row, 1, QTableWidgetItem(sig.get("signal_type", "")))
             signals_table.setItem(row, 2, QTableWidgetItem(
                 sig.get("signal_description", "")))
+            signals_table.setItem(row, 3, QTableWidgetItem(
+                sig.get("prefix", "NA") or "NA"))
+            signals_table.setItem(row, 4, QTableWidgetItem(
+                sig.get("suffix", "NA") or "NA"))
         
         signals_table.setMaximumHeight(min(200, len(composition["signals"]) * 25 + 30))
         lay.addWidget(signals_table, stretch=1)
