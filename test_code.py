@@ -5519,6 +5519,8 @@ class SignalCompositionConfigDialog(QDialog):
             e.setPlaceholderText(f"Description {i + 1}…")
         if hasattr(self, '_add_desc_btn'):
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
+
+    def _use_template(self):
         """Load a template and use it as basis for new composition."""
         template_dlg = SignalCompositionTemplateDialog(self)
         if template_dlg.exec() != QDialog.DialogCode.Accepted:
@@ -5554,7 +5556,8 @@ class SignalCompositionConfigDialog(QDialog):
             
             self._clear_form()
             self.title_edit.setText(new_title.strip())
-            self.desc_edit.setPlainText(template["description"])
+            if self._desc_fields:
+                self._desc_fields[0].setText(template.get("description", ""))
             
             # Populate signals from template
             self.signals_table.setRowCount(0)
