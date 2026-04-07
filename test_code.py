@@ -5650,6 +5650,7 @@ class SignalCompositionConfigDialog(QDialog):
         
         if ans == QMessageBox.StandardButton.Yes:
             comp_id = items[0].data(Qt.ItemDataRole.UserRole)
+            db_delete_signal_composition(comp_id)
             self._compositions = [c for c in self._compositions if c["id"] != comp_id]
             self._populate_list()
             self._clear_form()
