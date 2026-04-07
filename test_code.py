@@ -5311,17 +5311,12 @@ class SignalCompositionConfigDialog(QDialog):
             self._current_comp_id = comp_id
             self.title_edit.setText(comp["title"])
             # Populate description fields
-            desc_lines = [l for l in comp["description"].split("\n") if l] if comp["description"] else []
-            # Reset to one field
-            for edit in self._desc_fields[1:]:
-                edit.deleteLater()
-            self._desc_fields = self._desc_fields[:1]
+            desc_lines = [line for line in comp["description"].split("\n") if line] if comp["description"] else []
+            self._reset_desc_fields()
             if desc_lines:
                 self._desc_fields[0].setText(desc_lines[0])
                 for line in desc_lines[1:]:
                     self._add_desc_field(line)
-            else:
-                self._desc_fields[0].clear()
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
             self.control_module_combo.setCurrentText(comp.get("control_module", "NA"))
             self.transmitter_combo.setCurrentText(comp.get("transmitter", "NA"))
@@ -5334,13 +5329,7 @@ class SignalCompositionConfigDialog(QDialog):
         """Clear all form fields."""
         self._current_comp_id = None
         self.title_edit.clear()
-        # Reset description to one empty field
-        for edit in self._desc_fields[1:]:
-            edit.deleteLater()
-        self._desc_fields = self._desc_fields[:1]
-        if self._desc_fields:
-            self._desc_fields[0].clear()
-        self._add_desc_btn.setEnabled(True)
+        self._reset_desc_fields()
         self.control_module_combo.setCurrentText("NA")
         self.transmitter_combo.setCurrentText("NA")
         self.signals_table.setRowCount(0)
@@ -5348,46 +5337,43 @@ class SignalCompositionConfigDialog(QDialog):
     
     def _populate_signals_table(self, signals: list[dict]):
         """Fill the signals table with 7 columns."""
-        self.signals_table.setRowCount(0)
-        for sig in signals:
-            r = self.signals_table.rowCount()
-            self.signals_table.insertRow(r)
-            
-            # Signal Name
-            self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-            # Signal Type
-            self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
-            # Signal Description
-            self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
-            # Count
-            count_item = QTableWidgetItem(str(sig.get("count", 1)))
-            self.signals_table.setItem(r, 3, count_item)
-            # Prefix
-            self.signals_table.setItem(r, 4, QTableWidgetItem(sig.get("prefix", "NA") or "NA"))
-            # Suffix
-            self.signals_table.setItem(r, 5, QTableWidgetItem(sig.get("suffix", "NA") or "NA"))
-            # Resulting Signal (read-only, calculated) — col 6
-            resulting = self._calculate_resulting_signal(sig["signal_type"], sig.get("count", 1))
-            result_item = QTableWidgetItem(resulting)
-            result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.signals_table.setItem(r, 6, result_item)
+        self.signals_table.blockSignals(True)
+        try:
+            self.signals_table.setRowCount(0)
+            for sig in signals:
+                r = self.signals_table.rowCount()
+                self.signals_table.insertRow(r)
+                
+                self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
+                self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
+                self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
+                count_item = QTableWidgetItem(str(sig.get("count", 1)))
+                self.signals_table.setItem(r, 3, count_item)
+                self.signals_table.setItem(r, 4, QTableWidgetItem(sig.get("prefix", "NA") or "NA"))
+                self.signals_table.setItem(r, 5, QTableWidgetItem(sig.get("suffix", "NA") or "NA"))
+                resulting = self._calculate_resulting_signal(sig["signal_type"], sig.get("count", 1))
+                result_item = QTableWidgetItem(resulting)
+                result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.signals_table.setItem(r, 6, result_item)
+        finally:
+            self.signals_table.blockSignals(False)
+        self._update_composition_display()
     
     def _add_signal_row(self):
         """Add an empty signal row."""
         r = self.signals_table.rowCount()
         self.signals_table.insertRow(r)
-        
-        for col in range(4):  # cols 0-3 editable (name, type, desc, count)
-            self.signals_table.setItem(r, col, QTableWidgetItem(""))
-        
-        # Prefix and Suffix default to "NA"
-        self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
-        self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
-        
-        # Resulting signal at col 6 (read-only)
-        result_item = QTableWidgetItem("")
-        result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        self.signals_table.setItem(r, 6, result_item)
+        self.signals_table.blockSignals(True)
+        try:
+            for col in range(4):  # cols 0-3 editable (name, type, desc, count)
+                self.signals_table.setItem(r, col, QTableWidgetItem(""))
+            self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
+            self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
+            result_item = QTableWidgetItem("")
+            result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.signals_table.setItem(r, 6, result_item)
+        finally:
+            self.signals_table.blockSignals(False)
     
     def _remove_signal_row(self):
         """Remove the selected signal row."""
@@ -5520,6 +5506,22 @@ class SignalCompositionConfigDialog(QDialog):
         if hasattr(self, '_add_desc_btn'):
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
 
+    def _reset_desc_fields(self) -> None:
+        """Completely clear and rebuild the description field area (one empty field)."""
+        # Remove every row-layout and its child widgets from desc_layout
+        while self._desc_layout.count():
+            layout_item = self._desc_layout.takeAt(0)
+            sub_lay = layout_item.layout()
+            if sub_lay:
+                while sub_lay.count():
+                    widget_item = sub_lay.takeAt(0)
+                    if widget_item.widget():
+                        widget_item.widget().deleteLater()
+        self._desc_fields = []
+        if hasattr(self, '_add_desc_btn'):
+            self._add_desc_btn.setEnabled(True)
+        self._add_desc_field()  # always keep at least one slot
+
     def _use_template(self):
         """Load a template and use it as basis for new composition."""
         template_dlg = SignalCompositionTemplateDialog(self)
@@ -5560,22 +5562,26 @@ class SignalCompositionConfigDialog(QDialog):
                 self._desc_fields[0].setText(template.get("description", ""))
             
             # Populate signals from template
-            self.signals_table.setRowCount(0)
-            for sig in template["signals"]:
-                r = self.signals_table.rowCount()
-                self.signals_table.insertRow(r)
-                
-                self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-                self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
-                self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
-                self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
-                self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
-                self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
-                
-                resulting = self._calculate_resulting_signal(sig["signal_type"], 1)
-                result_item = QTableWidgetItem(resulting)
-                result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.signals_table.setItem(r, 6, result_item)
+            self.signals_table.blockSignals(True)
+            try:
+                self.signals_table.setRowCount(0)
+                for sig in template["signals"]:
+                    r = self.signals_table.rowCount()
+                    self.signals_table.insertRow(r)
+                    
+                    self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
+                    self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
+                    self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
+                    self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
+                    self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
+                    self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
+                    
+                    resulting = self._calculate_resulting_signal(sig["signal_type"], 1)
+                    result_item = QTableWidgetItem(resulting)
+                    result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.signals_table.setItem(r, 6, result_item)
+            finally:
+                self.signals_table.blockSignals(False)
             
             self._current_comp_id = None  # Mark as new composition
             self._update_composition_display()
