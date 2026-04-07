@@ -1916,8 +1916,7 @@ def _db_connect() -> sqlite3.Connection:
     try:
         existing_sig_cols = [
             row[1]
-            for row in con.execute(
-                "PRAGMA table_info(signal_composition_signals)").fetchall()
+            for row in con.execute("PRAGMA table_info(signal_composition_signals)").fetchall()
         ]
         if "prefix" not in existing_sig_cols:
             con.execute(
