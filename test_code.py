@@ -1980,6 +1980,8 @@ def _db_connect() -> sqlite3.Connection:
                             signal_name        TEXT    NOT NULL,
                             signal_type        TEXT    NOT NULL,
                             signal_description TEXT    NOT NULL DEFAULT '',
+                            prefix             TEXT    NOT NULL DEFAULT 'NA',
+                            suffix             TEXT    NOT NULL DEFAULT 'NA',
                             sort_order         INTEGER NOT NULL DEFAULT 0
                         )
                     """)
@@ -2062,6 +2064,28 @@ def _db_connect() -> sqlite3.Connection:
     except Exception as e:
         print(f"signal_compositions column migration error (non-fatal): {e}")
 
+    # ── Migrate signal_composition_signals: add prefix / suffix columns ────
+    try:
+        existing_sig_cols = [
+            row[1]
+            for row in con.execute(
+                "PRAGMA table_info(signal_composition_signals)").fetchall()
+        ]
+        if "prefix" not in existing_sig_cols:
+            con.execute(
+                "ALTER TABLE signal_composition_signals "
+                "ADD COLUMN prefix TEXT NOT NULL DEFAULT 'NA'"
+            )
+            con.commit()
+        if "suffix" not in existing_sig_cols:
+            con.execute(
+                "ALTER TABLE signal_composition_signals "
+                "ADD COLUMN suffix TEXT NOT NULL DEFAULT 'NA'"
+            )
+            con.commit()
+    except Exception as e:
+        print(f"signal_composition_signals column migration error (non-fatal): {e}")
+
     # ── Other tables (these should be fine) ───────────────────────────────
     con.execute("""
         CREATE TABLE IF NOT EXISTS signal_composition_signals (
@@ -2070,6 +2094,8 @@ def _db_connect() -> sqlite3.Connection:
             signal_name     TEXT    NOT NULL,
             signal_type     TEXT    NOT NULL,
             signal_description TEXT NOT NULL DEFAULT '',
+            prefix          TEXT    NOT NULL DEFAULT 'NA',
+            suffix          TEXT    NOT NULL DEFAULT 'NA',
             sort_order      INTEGER NOT NULL DEFAULT 0
         )
     """)
@@ -2628,10 +2654,14 @@ def db_save_signal_composition(title: str, description: str,
         for order, sig in enumerate(signals):
             con.execute(
                 "INSERT INTO signal_composition_signals "
-                "(composition_id, signal_name, signal_type, signal_description, sort_order) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "(composition_id, signal_name, signal_type, signal_description, "
+                "prefix, suffix, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
-                 sig.get("signal_description", ""), order))
+                 sig.get("signal_description", ""),
+                 sig.get("prefix", "NA") or "NA",
+                 sig.get("suffix", "NA") or "NA",
+                 order))
         
         con.commit()
     
@@ -2664,7 +2694,7 @@ def db_load_signal_composition(composition_id: int) -> dict:
         
         # Load signals
         signals = con.execute(
-            "SELECT signal_name, signal_type, signal_description "
+            "SELECT signal_name, signal_type, signal_description, prefix, suffix "
             "FROM signal_composition_signals WHERE composition_id = ? "
             "ORDER BY sort_order",
             (composition_id,)).fetchall()
@@ -2679,7 +2709,9 @@ def db_load_signal_composition(composition_id: int) -> dict:
             {
                 "signal_name": s[0],
                 "signal_type": s[1],
-                "signal_description": s[2] or ""
+                "signal_description": s[2] or "",
+                "prefix": s[3] or "NA",
+                "suffix": s[4] or "NA",
             }
             for s in signals
         ]
@@ -2815,10 +2847,14 @@ def db_update_signal_composition(composition_id: int, title: str,
         for order, sig in enumerate(signals):
             con.execute(
                 "INSERT INTO signal_composition_signals "
-                "(composition_id, signal_name, signal_type, signal_description, sort_order) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "(composition_id, signal_name, signal_type, signal_description, "
+                "prefix, suffix, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
-                 sig.get("signal_description", ""), order))
+                 sig.get("signal_description", ""),
+                 sig.get("prefix", "NA") or "NA",
+                 sig.get("suffix", "NA") or "NA",
+                 order))
         
         con.commit()
                 
