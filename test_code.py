@@ -1952,11 +1952,13 @@ def _db_connect() -> sqlite3.Connection:
                     # Create new table WITHOUT UNIQUE constraint
                     con.execute("""
                         CREATE TABLE signal_compositions (
-                            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                            title       TEXT    NOT NULL,
-                            description TEXT    NOT NULL DEFAULT '',
-                            created     TEXT    NOT NULL,
-                            modified    TEXT    NOT NULL
+                            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                            title           TEXT    NOT NULL,
+                            description     TEXT    NOT NULL DEFAULT '',
+                            control_module  TEXT    NOT NULL DEFAULT 'NA',
+                            transmitter     TEXT    NOT NULL DEFAULT 'NA',
+                            created         TEXT    NOT NULL,
+                            modified        TEXT    NOT NULL
                         )
                     """)
 
@@ -2005,22 +2007,26 @@ def _db_connect() -> sqlite3.Connection:
             # Table doesn't exist yet — create fresh
             con.execute("""
                 CREATE TABLE IF NOT EXISTS signal_compositions (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title       TEXT    NOT NULL,
-                    description TEXT    NOT NULL DEFAULT '',
-                    created     TEXT    NOT NULL,
-                    modified    TEXT    NOT NULL
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title           TEXT    NOT NULL,
+                    description     TEXT    NOT NULL DEFAULT '',
+                    control_module  TEXT    NOT NULL DEFAULT 'NA',
+                    transmitter     TEXT    NOT NULL DEFAULT 'NA',
+                    created         TEXT    NOT NULL,
+                    modified        TEXT    NOT NULL
                 )
             """)
     except Exception as e:
         print(f"Signal compositions table setup error: {e}")
         con.execute("""
             CREATE TABLE IF NOT EXISTS signal_compositions (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                title       TEXT    NOT NULL,
-                description TEXT    NOT NULL DEFAULT '',
-                created     TEXT    NOT NULL,
-                modified    TEXT    NOT NULL
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                title           TEXT    NOT NULL,
+                description     TEXT    NOT NULL DEFAULT '',
+                control_module  TEXT    NOT NULL DEFAULT 'NA',
+                transmitter     TEXT    NOT NULL DEFAULT 'NA',
+                created         TEXT    NOT NULL,
+                modified        TEXT    NOT NULL
             )
         """)
     
@@ -2034,7 +2040,28 @@ def _db_connect() -> sqlite3.Connection:
             con.commit()
     except:
         pass
-    
+
+    # ── Migrate signal_compositions: add control_module / transmitter columns ──
+    try:
+        existing_cols = [
+            row[1]
+            for row in con.execute("PRAGMA table_info(signal_compositions)").fetchall()
+        ]
+        if "control_module" not in existing_cols:
+            con.execute(
+                "ALTER TABLE signal_compositions "
+                "ADD COLUMN control_module TEXT NOT NULL DEFAULT 'NA'"
+            )
+            con.commit()
+        if "transmitter" not in existing_cols:
+            con.execute(
+                "ALTER TABLE signal_compositions "
+                "ADD COLUMN transmitter TEXT NOT NULL DEFAULT 'NA'"
+            )
+            con.commit()
+    except Exception as e:
+        print(f"signal_compositions column migration error (non-fatal): {e}")
+
     # ── Other tables (these should be fine) ───────────────────────────────
     con.execute("""
         CREATE TABLE IF NOT EXISTS signal_composition_signals (
@@ -2557,7 +2584,9 @@ def db_get_or_create_project_owner(project_id: int) -> int:
         return cur.lastrowid
  
 def db_save_signal_composition(title: str, description: str,
-                              signals: list[dict]) -> int:
+                              signals: list[dict],
+                              control_module: str = "NA",
+                              transmitter: str = "NA") -> int:
     """
     Save a new signal composition.
     
@@ -2565,6 +2594,8 @@ def db_save_signal_composition(title: str, description: str,
         title: Composition name (e.g., "On-Off Valve")
         description: Optional description
         signals: List of dicts: [{signal_name, signal_type, signal_description}, ...]
+        control_module: Control module identifier or "NA"
+        transmitter: Transmitter identifier or "NA"
         
     Returns:
         composition_id
@@ -2586,9 +2617,11 @@ def db_save_signal_composition(title: str, description: str,
     with _db_connect() as con:
         # Insert composition
         cur = con.execute(
-            "INSERT INTO signal_compositions (title, description, created, modified) "
-            "VALUES (?, ?, ?, ?)",
-            (title, description or "", now, now))
+            "INSERT INTO signal_compositions "
+            "(title, description, control_module, transmitter, created, modified) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (title, description or "", control_module or "NA",
+             transmitter or "NA", now, now))
         composition_id = cur.lastrowid
         
         # Insert signals
@@ -2614,13 +2647,16 @@ def db_load_signal_composition(composition_id: int) -> dict:
             "id": int,
             "title": str,
             "description": str,
+            "control_module": str,
+            "transmitter": str,
             "signals": [{"signal_name", "signal_type", "signal_description"}, ...]
         }
     """
     with _db_connect() as con:
         # Load composition
         comp = con.execute(
-            "SELECT id, title, description FROM signal_compositions WHERE id = ?",
+            "SELECT id, title, description, control_module, transmitter "
+            "FROM signal_compositions WHERE id = ?",
             (composition_id,)).fetchone()
         
         if not comp:
@@ -2637,6 +2673,8 @@ def db_load_signal_composition(composition_id: int) -> dict:
         "id": comp[0],
         "title": comp[1],
         "description": comp[2] or "",
+        "control_module": comp[3] or "NA",
+        "transmitter": comp[4] or "NA",
         "signals": [
             {
                 "signal_name": s[0],
@@ -2750,7 +2788,9 @@ def db_delete_signal_composition(composition_id: int) -> None:
 
 
 def db_update_signal_composition(composition_id: int, title: str,
-                                description: str, signals: list[dict]) -> None:
+                                description: str, signals: list[dict],
+                                control_module: str = "NA",
+                                transmitter: str = "NA") -> None:
     """
     Update an existing signal composition.
     """
@@ -2760,9 +2800,11 @@ def db_update_signal_composition(composition_id: int, title: str,
     with _db_connect() as con:
         # Update composition header
         con.execute(
-            "UPDATE signal_compositions SET title = ?, description = ?, modified = ? "
+            "UPDATE signal_compositions "
+            "SET title = ?, description = ?, control_module = ?, transmitter = ?, modified = ? "
             "WHERE id = ?",
-            (title, description or "", now, composition_id))
+            (title, description or "", control_module or "NA",
+             transmitter or "NA", now, composition_id))
         
         # Delete old signals
         con.execute(
@@ -5357,6 +5399,10 @@ class SignalCompositionConfigDialog(QDialog):
             " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
             "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
             " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
+            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
+            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
+            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
+            " selection-background-color: #3D5A80; }"
             "QTableWidget { background: #252525; color: #F0F0F0;"
             " gridline-color: #3A3A3A; }"
             "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
