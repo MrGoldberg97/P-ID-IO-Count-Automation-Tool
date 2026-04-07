@@ -5311,12 +5311,12 @@ class SignalCompositionConfigDialog(QDialog):
             self._current_comp_id = comp_id
             self.title_edit.setText(comp["title"])
             # Populate description fields
-            desc_lines = [line for line in comp["description"].split("\n") if line] if comp["description"] else []
+            desc_lines = [dl for dl in comp["description"].split("\n") if dl] if comp["description"] else []
             self._reset_desc_fields()
             if desc_lines:
                 self._desc_fields[0].setText(desc_lines[0])
-                for line in desc_lines[1:]:
-                    self._add_desc_field(line)
+                for dl in desc_lines[1:]:
+                    self._add_desc_field(dl)
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
             self.control_module_combo.setCurrentText(comp.get("control_module", "NA"))
             self.transmitter_combo.setCurrentText(comp.get("transmitter", "NA"))
@@ -5558,7 +5558,7 @@ class SignalCompositionConfigDialog(QDialog):
             
             self._clear_form()
             self.title_edit.setText(new_title.strip())
-            if self._desc_fields:
+            if self._desc_fields:  # _reset_desc_fields() (called by _clear_form) guarantees this
                 self._desc_fields[0].setText(template.get("description", ""))
             
             # Populate signals from template
