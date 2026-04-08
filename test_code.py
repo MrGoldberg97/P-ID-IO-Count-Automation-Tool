@@ -2435,7 +2435,10 @@ def db_load_project_markers(project_id: int,
                     m.pdf_x,
                     m.pdf_y,
                     m.signal_type,
-                    m.signal_type_comment
+                    m.signal_type_comment,
+                    m.is_composition,
+                    m.composition_id,
+                    m.tag_parts
                 FROM project_files pf
                 JOIN markers m
                   ON REPLACE(m.pdf, '\\', '/') = REPLACE(pf.file_path, '\\', '/')
@@ -2457,7 +2460,10 @@ def db_load_project_markers(project_id: int,
                     m.pdf_x,
                     m.pdf_y,
                     m.signal_type,
-                    m.signal_type_comment
+                    m.signal_type_comment,
+                    m.is_composition,
+                    m.composition_id,
+                    m.tag_parts
                 FROM project_files pf
                 JOIN markers m
                   ON REPLACE(m.pdf, '\\', '/') = REPLACE(pf.file_path, '\\', '/')
@@ -2466,8 +2472,15 @@ def db_load_project_markers(project_id: int,
                 ORDER BY pf.sort_order, pf.id, m.page, m.type
             """, (project_id,)).fetchall()
 
-    return [
-        {
+    result = []
+    for r in rows:
+        tag_parts = {}
+        if r[13]:
+            try:
+                tag_parts = json.loads(r[13])
+            except (json.JSONDecodeError, TypeError):
+                tag_parts = {}
+        result.append({
             "file_name":            r[0],
             "file_path":            r[1],
             "page":                 r[2],
@@ -2479,9 +2492,11 @@ def db_load_project_markers(project_id: int,
             "pdf_y":                r[8],
             "parent_signal_type":   r[9]  or "",
             "parent_signal_comment":r[10] or "",
-        }
-        for r in rows
-    ]
+            "is_composition":       bool(r[11]) if r[11] else False,
+            "composition_id":       r[12],
+            "tag_parts":            tag_parts,
+        })
+    return result
 
 
 def db_get_project_drawing_meta(project_id: int) -> dict:
@@ -3938,64 +3953,110 @@ def _get_signal_composition(complex_obj: dict) -> str:
     return " ".join(composition_parts)  # e.g., "2HDI 1HDO"
 
 # ─────────────────────────────────────────────────────────────────────
-# Helper: Expand complex markers to individual signal rows
+# Helper: Expand markers to the new 6-column export format
 # ─────────────────────────────────────────────────────────────────────
 def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
     """
-    Expand composition markers into multiple rows (one per signal).
-    Uses tag_parts to build: prefix-SIGNAL_NAME-middle_fields-suffix
+    Expand each marker into one or more row dicts with keys:
+        name, type, desc1, desc2, tag_name, comments, page, file_name
+
+    For composition markers the output is:
+        1. One row per Control Module (if present, i.e. not "NA")
+        2. One row per Transmitter   (if present, i.e. not "NA")
+        3. One row per signal in the composition (signals are already
+           listed individually, so "2HDI" produces two rows)
+
+    Description 2 (desc2) is the compact composition summary ("2HDI 1HDO")
+    and is repeated on every row belonging to that composition.
+    Comments is the composition description and is also repeated.
+    Tag Name is  prefix-SignalType-suffix  for signal rows, "NA" for CM/TX rows.
+    Prefix and suffix are taken from the marker's tag_parts (user-entered when
+    placing the composition marker on the drawing).
+
+    For plain (non-composition) markers a single row is produced using the
+    marker's own type / comment / description.
     """
     expanded = []
-    
+
     for m in markers:
         if m.get("is_composition") and m.get("composition_id"):
-            # ── Expand composition marker to multiple rows ──────────
             composition = db_load_signal_composition(m["composition_id"])
             if not composition:
                 continue
-            
-            tag_parts = m.get("tag_parts", {})
-            
-            prefix = tag_parts.get("prefix", "")
-            middle_fields = tag_parts.get("middle_fields", [])
-            suffix = tag_parts.get("suffix", "")
-            
-            for signal in composition["signals"]:
-                # Build tag: prefix-SIGNAL-middle_fields-suffix
-                parts = []
-                
-                if prefix:
-                    parts.append(prefix)
-                
-                parts.append(signal["signal_name"])
-                
-                if middle_fields:
-                    parts.extend(middle_fields)
-                
-                if suffix:
-                    parts.append(suffix)
-                
-                signal_tag = "-".join(parts)
-                
+
+            tag_parts = m.get("tag_parts") or {}
+            prefix    = tag_parts.get("prefix", "")
+            suffix    = tag_parts.get("suffix", "")
+
+            desc2    = _get_signal_composition(composition)
+            comments = composition.get("description", "")
+            file_nm  = m.get("file_name", "")
+            page     = m.get("page", 0)
+
+            # ── Control Module row ───────────────────────────────────
+            cm_name = composition.get("control_module", "NA") or "NA"
+            if cm_name and cm_name.strip().upper() != "NA":
                 expanded.append({
-                    "tag": signal_tag,
-                    "signal": signal["signal_name"],
-                    "type": signal["signal_type"],
-                    "description": signal.get("signal_description", ""),
-                    "page": m["page"],
-                    "_expanded_from_composition": True,
+                    "name":      cm_name,
+                    "type":      composition.get("cm_type", "") or "",
+                    "desc1":     composition.get("cm_description", "") or "",
+                    "desc2":     desc2,
+                    "tag_name":  "NA",
+                    "comments":  comments,
+                    "page":      page,
+                    "file_name": file_nm,
+                })
+
+            # ── Transmitter row ──────────────────────────────────────
+            tx_name = composition.get("transmitter", "NA") or "NA"
+            if tx_name and tx_name.strip().upper() != "NA":
+                expanded.append({
+                    "name":      tx_name,
+                    "type":      composition.get("tx_type", "") or "",
+                    "desc1":     composition.get("tx_description", "") or "",
+                    "desc2":     desc2,
+                    "tag_name":  "NA",
+                    "comments":  comments,
+                    "page":      page,
+                    "file_name": file_nm,
+                })
+
+            # ── One row per signal ───────────────────────────────────
+            for signal in composition.get("signals", []):
+                sig_type = signal.get("signal_type", "")
+                tag_parts_list = []
+                if prefix:
+                    tag_parts_list.append(prefix)
+                if sig_type:
+                    tag_parts_list.append(sig_type)
+                if suffix:
+                    tag_parts_list.append(suffix)
+                tag_name = "-".join(tag_parts_list) if tag_parts_list else "NA"
+
+                expanded.append({
+                    "name":      signal.get("signal_name", ""),
+                    "type":      sig_type,
+                    "desc1":     signal.get("signal_description", ""),
+                    "desc2":     desc2,
+                    "tag_name":  tag_name,
+                    "comments":  comments,
+                    "page":      page,
+                    "file_name": file_nm,
                 })
         else:
-            # ── Keep other markers as-is ──────────────────────────
+            # ── Plain (non-composition) marker ───────────────────────
+            sig_type = (m.get("signal_type") or m.get("type") or "")
             expanded.append({
-                "tag": m.get("base_tag", ""),
-                "signal": m.get("type", ""),
-                "type": m.get("signal_type", ""),
-                "description": m.get("comment", ""),
-                "page": m["page"],
-                "_expanded_from_composition": False,
+                "name":      m.get("type", ""),
+                "type":      sig_type,
+                "desc1":     m.get("description", "") or m.get("comment", ""),
+                "desc2":     "",
+                "tag_name":  m.get("complete_tag") or m.get("base_tag", ""),
+                "comments":  m.get("comment", "") or m.get("signal_comment", ""),
+                "page":      m.get("page", 0),
+                "file_name": m.get("file_name", ""),
             })
-    
+
     return expanded
 # ---------------------------------------------------------------------------
 # Excel export — writer
@@ -4004,20 +4065,27 @@ def export_to_excel(path: str, pdf_path: str,
                     markers: list[dict], meta: dict,
                     col_config: list[dict]) -> None:
     """
-    Build an Excel workbook from markers.
-    Complex markers are expanded to multiple rows (one per signal).
-    
-    Columns:
-    - Tag (e.g., XV-101-XS, XV-101-ZSH)
-    - Signal (e.g., XS, ZSH)
-    - Type (e.g., HDO, HDI)
-    - Description (from complex object or marker comment)
+    Build an Excel workbook from markers using the new 6-column format.
+
+    Columns per row:
+        Name | Type | Description 1 | Description 2 | Tag Name | Comments
+
+    Composition markers are expanded:
+        • One row for the Control Module (if present)
+        • One row for the Transmitter    (if present)
+        • One row per signal in the composition
+          (repeated signals, e.g. 2×HDI, produce two rows each)
     """
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
 
-    # ── Expand complex markers ─────────────────────────────────────
+    FIXED_HEADERS = ["Name", "Type", "Description 1",
+                     "Description 2 (Signal Composition Details)",
+                     "Tag Name", "Comments"]
+    COL_WIDTHS    = [24, 14, 36, 36, 22, 36]
+
+    # Expand markers into rows
     expanded_markers = _expand_markers_for_excel(markers)
 
     # Group by page
@@ -4025,18 +4093,14 @@ def export_to_excel(path: str, pdf_path: str,
     for m in expanded_markers:
         pages.setdefault(m["page"], []).append(m)
 
-    # ── Fixed header columns ───────────────────────────────────────
-    FIXED_HEADERS = ["Tag", "Signal", "Type", "Description"]
-
-    # Header styles
-    hdr_font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
-    hdr_fill = PatternFill("solid", start_color="1F4E79")
+    # Styles
+    hdr_font  = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    hdr_fill  = PatternFill("solid", start_color="1F4E79")
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    
-    row_font = Font(name="Arial", size=10)
-    alt_fill = PatternFill("solid", start_color="EEF2FA")
+    row_font  = Font(name="Arial", size=10)
+    alt_fill  = PatternFill("solid", start_color="EEF2FA")
     center_al = Alignment(horizontal="center", vertical="center")
-    left_al = Alignment(horizontal="left", vertical="center")
+    left_al   = Alignment(horizontal="left",   vertical="center", wrap_text=True)
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -4047,47 +4111,38 @@ def export_to_excel(path: str, pdf_path: str,
         sheet_name = f"Page {page_idx + 1}"
         ws = wb.create_sheet(title=sheet_name)
 
-        # ── Header row ─────────────────────────────────────────────
-        for ci, hdr in enumerate(FIXED_HEADERS, start=1):
+        # Header row
+        for ci, (hdr, w) in enumerate(zip(FIXED_HEADERS, COL_WIDTHS), start=1):
             cell = ws.cell(row=1, column=ci, value=hdr)
-            cell.font = hdr_font
-            cell.fill = hdr_fill
+            cell.font      = hdr_font
+            cell.fill      = hdr_fill
             cell.alignment = hdr_align
-        ws.row_dimensions[1].height = 24
+            ws.column_dimensions[get_column_letter(ci)].width = w
+        ws.row_dimensions[1].height = 28
 
-        # ── Data rows ──────────────────────────────────────────────
-        page_markers = sorted(pages.get(page_idx, []),
-                               key=lambda m: m.get("signal", "").upper())
-
-        for ri, m in enumerate(page_markers, start=2):
-            fill = PatternFill("solid", start_color="EEF2FA") \
-                   if ri % 2 == 0 else PatternFill()
-
-            # Get values
-            tag = m.get("tag", "")
-            signal_name = m.get("signal", "")
-            signal_type = m.get("type", "")
-            description = m.get("description", "")
-
-            values = [tag, signal_name, signal_type, description]
-            
+        # Data rows
+        page_rows = pages.get(page_idx, [])
+        for ri, m in enumerate(page_rows, start=2):
+            fill = alt_fill if ri % 2 == 0 else PatternFill()
+            values = [
+                m.get("name", ""),
+                m.get("type", ""),
+                m.get("desc1", ""),
+                m.get("desc2", ""),
+                m.get("tag_name", ""),
+                m.get("comments", ""),
+            ]
             for ci, val in enumerate(values, start=1):
                 cell = ws.cell(row=ri, column=ci, value=val)
-                cell.font = row_font
-                cell.fill = fill
-                cell.alignment = left_al if ci == 4 else center_al
+                cell.font      = row_font
+                cell.fill      = fill
+                cell.alignment = center_al if ci == 2 else left_al
 
-        # ── Column widths ──────────────────────────────────────────
-        ws.column_dimensions["A"].width = 20  # Tag
-        ws.column_dimensions["B"].width = 12  # Signal
-        ws.column_dimensions["C"].width = 12  # Type
-        ws.column_dimensions["D"].width = 40  # Description
-
-        # ── Summary row ────────────────────────────────────────────
-        if page_markers:
-            summary_row = len(page_markers) + 2
+        # Summary row
+        if page_rows:
+            summary_row = len(page_rows) + 2
             ws.cell(row=summary_row, column=1,
-                    value=f"Total markers on this page: {len(page_markers)}"
+                    value=f"Total rows on this page: {len(page_rows)}"
                     ).font = Font(name="Arial", bold=True, italic=True,
                                   size=10, color="1F4E79")
 
@@ -4102,33 +4157,44 @@ def export_to_excel(path: str, pdf_path: str,
 def export_project_io_list(path: str, project_id: int,
                            file_path: str | None = None) -> None:
     """
-    Export IO signal markers to Excel.
+    Export IO signal markers to Excel using the 6-column format.
+
+    Columns: Name | Type | Description 1 | Description 2 | Tag Name | Comments
+
+    Composition markers are expanded:
+        • One row for the Control Module (if present)
+        • One row for the Transmitter    (if present)
+        • One row per signal in the composition
+          (signals with count > 1 already appear as multiple entries in the
+           composition's signals list, so "2HDI" naturally produces two rows)
+
     If file_path is given, exports only that drawing.
-    Otherwise exports the entire project (all drawings).
-    File paths are intentionally excluded from the output.
+    Otherwise exports the entire project (all drawings), with one summary
+    "IO List" sheet and one per-drawing sheet.
     """
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
 
-    markers  = db_load_project_markers(project_id, file_path)
-    meta     = db_get_project_drawing_meta(project_id)
+    markers = db_load_project_markers(project_id, file_path)
+    meta    = db_get_project_drawing_meta(project_id)
+
+    COLS       = ["Name", "Type", "Description 1",
+                  "Description 2 (Signal Composition Details)",
+                  "Tag Name", "Comments"]
+    COL_WIDTHS = [24, 14, 36, 36, 22, 36]
 
     # Styles
-    hdr_font     = Font(name="Arial", bold=True, color="FFFFFF", size=10)
-    hdr_fill     = PatternFill("solid", start_color="1F4E79")
-    hdr_align    = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    sub_font     = Font(name="Arial", bold=True, color="1F4E79", size=10)
-    sub_fill     = PatternFill("solid", start_color="D9E1F2")
-    sub_align    = Alignment(horizontal="left", vertical="center")
-    row_font     = Font(name="Arial", size=10)
-    alt_fill     = PatternFill("solid", start_color="EEF2FA")
-    center_al    = Alignment(horizontal="center", vertical="center")
-    left_al      = Alignment(horizontal="left",   vertical="center")
-
-    COLS = ["No.", "Drawing", "Page", "Signal Type", "Sub-signal",
-            "Count", "Signal Description", "Sub-signal Description", "Notes"]
-    COL_WIDTHS = [6, 28, 7, 14, 14, 8, 26, 26, 36]
+    hdr_font  = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    hdr_fill  = PatternFill("solid", start_color="1F4E79")
+    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    sub_font  = Font(name="Arial", bold=True, color="1F4E79", size=10)
+    sub_fill  = PatternFill("solid", start_color="D9E1F2")
+    sub_align = Alignment(horizontal="left", vertical="center")
+    row_font  = Font(name="Arial", size=10)
+    alt_fill  = PatternFill("solid", start_color="EEF2FA")
+    center_al = Alignment(horizontal="center", vertical="center")
+    left_al   = Alignment(horizontal="left",   vertical="center", wrap_text=True)
 
     def _write_header(ws):
         for ci, (hdr, w) in enumerate(zip(COLS, COL_WIDTHS), 1):
@@ -4137,77 +4203,55 @@ def export_project_io_list(path: str, project_id: int,
             cell.fill      = hdr_fill
             cell.alignment = hdr_align
             ws.column_dimensions[get_column_letter(ci)].width = w
-        ws.row_dimensions[1].height = 24
+        ws.row_dimensions[1].height = 28
         ws.freeze_panes = "A2"
 
-    def _write_marker_row(ws, row_idx: int, seq: int,
-                      drawing: str, m: dict, use_alt: bool):
+    def _write_row(ws, row_idx: int, r: dict, use_alt: bool):
         fill = alt_fill if use_alt else PatternFill()
-        
-        parent_type    = m.get("parent_signal_type",    "")
-        parent_comment = m.get("parent_signal_comment", "")
-        leaf_type      = m["signal_type"]
-        leaf_comment   = m["signal_comment"]
-
-        if parent_type:
-            # Full path: DI → HDI
-            sig_type_col     = parent_type
-            sig_type_desc    = parent_comment
-            sub_signal_col   = leaf_type
-            sub_signal_desc  = leaf_comment
-            display_label    = f"{leaf_type}"
-        else:
-            # Flat: no parent
-            sig_type_col     = leaf_type
-            sig_type_desc    = leaf_comment
-            sub_signal_col   = ""
-            sub_signal_desc  = ""
-            display_label    = f"{sig_type_col}"
-
-        values = [seq, drawing, m["page"] + 1,
-                sig_type_col, sub_signal_col,
-                1, sig_type_desc, sub_signal_desc,
-                m["description"]]
-        aligns = [center_al, left_al, center_al,
-                left_al, left_al,
-                center_al, left_al, left_al,
-                left_al]
-        for ci, (val, aln) in enumerate(zip(values, aligns), 1):
+        values = [
+            r.get("name", ""),
+            r.get("type", ""),
+            r.get("desc1", ""),
+            r.get("desc2", ""),
+            r.get("tag_name", ""),
+            r.get("comments", ""),
+        ]
+        for ci, val in enumerate(values, start=1):
             cell = ws.cell(row=row_idx, column=ci, value=val)
             cell.font      = row_font
             cell.fill      = fill
-            cell.alignment = aln
+            cell.alignment = center_al if ci == 2 else left_al
 
     wb = Workbook()
     wb.remove(wb.active)
 
-    # ── Summary sheet ─────────────────────────────────────────────────────
+    # ── Summary "IO List" sheet ────────────────────────────────────────────
     ws_all = wb.create_sheet("IO List")
     _write_header(ws_all)
 
-    # Add project metadata banner above the header
+    # Project metadata banner
     ws_all.insert_rows(1)
     banner_val = (f"Project: {meta['name']}"
                   + (f"  ({meta['number']})" if meta["number"] else ""))
     cell = ws_all.cell(row=1, column=1, value=banner_val)
-    cell.font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
-    cell.fill = PatternFill("solid", start_color="0D2B4E")
+    cell.font      = Font(name="Arial", bold=True, color="FFFFFF", size=11)
+    cell.fill      = PatternFill("solid", start_color="0D2B4E")
     cell.alignment = left_al
     ws_all.merge_cells(start_row=1, start_column=1,
                        end_row=1, end_column=len(COLS))
     ws_all.row_dimensions[1].height = 20
 
-    # Group markers by drawing
     from itertools import groupby
-    seq        = 0
+
+    total_rows = 0
     data_row   = 3   # row 1 = banner, row 2 = header
     alt_toggle = False
 
     for file_name, group in groupby(markers, key=lambda m: m["file_name"]):
         group_list = list(group)
+
         # Sub-header for this drawing
-        cell = ws_all.cell(row=data_row, column=1,
-                           value=f"📄  {file_name}")
+        cell = ws_all.cell(row=data_row, column=1, value=f"📄  {file_name}")
         cell.font      = sub_font
         cell.fill      = sub_fill
         cell.alignment = sub_align
@@ -4216,17 +4260,16 @@ def export_project_io_list(path: str, project_id: int,
         ws_all.row_dimensions[data_row].height = 18
         data_row += 1
 
-        for m in group_list:
-            seq        += 1
-            alt_toggle  = not alt_toggle
-            _write_marker_row(ws_all, data_row, seq,
-                              file_name, m, alt_toggle)
-            data_row += 1
+        expanded = _expand_markers_for_excel(group_list)
+        for r in expanded:
+            alt_toggle = not alt_toggle
+            _write_row(ws_all, data_row, r, alt_toggle)
+            data_row   += 1
+            total_rows += 1
 
-    # Summary count at the bottom
-    if seq:
+    if total_rows:
         ws_all.cell(row=data_row + 1, column=1,
-                    value=f"Total IO markers: {seq}"
+                    value=f"Total rows: {total_rows}"
                     ).font = Font(name="Arial", bold=True,
                                   italic=True, size=10, color="1F4E79")
 
@@ -4236,22 +4279,23 @@ def export_project_io_list(path: str, project_id: int,
             db_load_project_markers(project_id, file_path),
             key=lambda m: m["file_name"]):
         group_list = list(group)
-        # Deduplicate sheet names (same filename in multiple projects)
-        base = os.path.splitext(file_name)[0][:28]
+        base       = os.path.splitext(file_name)[0][:28]
         seen_names[base] = seen_names.get(base, 0) + 1
         sheet_name = base if seen_names[base] == 1 else f"{base}({seen_names[base]})"
 
         ws = wb.create_sheet(sheet_name)
         _write_header(ws)
-        alt_toggle = False
-        for ri, m in enumerate(group_list, start=1):
-            alt_toggle = not alt_toggle
-            _write_marker_row(ws, ri + 1, ri, file_name, m, alt_toggle)
 
-        if group_list:
-            summary_row = len(group_list) + 3
+        expanded   = _expand_markers_for_excel(group_list)
+        alt_toggle = False
+        for ri, r in enumerate(expanded, start=2):
+            alt_toggle = not alt_toggle
+            _write_row(ws, ri, r, alt_toggle)
+
+        if expanded:
+            summary_row = len(expanded) + 3
             ws.cell(row=summary_row, column=1,
-                    value=f"Total: {len(group_list)} marker(s)"
+                    value=f"Total: {len(expanded)} row(s)"
                     ).font = Font(name="Arial", bold=True,
                                   italic=True, size=10, color="1F4E79")
 
