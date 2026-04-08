@@ -40,6 +40,173 @@ MARKER_W  = 22
 MARKER_H  = 22
 MARKER_TH = 7
 
+# ---------------------------------------------------------------------------
+# Theme stylesheets
+# ---------------------------------------------------------------------------
+_DARK_THEME_SS = """
+    QMainWindow, QWidget {
+        background: #1E1E1E;
+        color: #F0F0F0;
+    }
+    QDialog { background: #1E1E1E; color: #F0F0F0; }
+    QMenuBar { background: #2B2B2B; color: #F0F0F0; }
+    QMenuBar::item:selected { background: #3A3A3A; color: #FFFFFF; }
+    QMenu { background: #2B2B2B; color: #F0F0F0; border: 1px solid #555555; }
+    QMenu::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QMenu::item:disabled { color: #777777; }
+    QMenu::separator { height: 1px; background: #444444; margin: 3px 6px; }
+    QTabWidget::pane { background: #1E1E1E; border: 1px solid #3A3A3A; }
+    QTabBar::tab { background: #2B2B2B; color: #CCCCCC; min-width: 140px;
+                   padding: 4px 12px; border: 1px solid #3A3A3A; border-bottom: none; }
+    QTabBar::tab:selected { background: #1E1E1E; color: #FFFFFF; font-weight: bold; }
+    QTabBar::tab:hover:!selected { background: #353535; }
+    QStatusBar { background: #2B2B2B; color: #CCCCCC; }
+    QStatusBar QLabel { color: #CCCCCC; }
+    QDockWidget { color: #F0F0F0; }
+    QDockWidget::title { background: #1F4E79; color: #FFFFFF;
+                         padding: 4px 8px; font-weight: bold; }
+    QScrollBar:vertical { background: #2B2B2B; width: 10px; }
+    QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }
+    QScrollBar:horizontal { background: #2B2B2B; height: 10px; }
+    QScrollBar::handle:horizontal { background: #555555; border-radius: 5px; }
+    QPushButton { background: #3A3A3A; color: #F0F0F0;
+                  border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }
+    QPushButton:hover   { background: #4A4A4A; }
+    QPushButton:pressed { background: #2A2A2A; }
+    QPushButton:disabled { color: #666666; background: #2B2B2B; }
+    QDialogButtonBox QPushButton { min-width: 72px; }
+    QLineEdit { background: #2B2B2B; color: #F0F0F0;
+                border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }
+    QTextEdit, QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;
+                                 border: 1px solid #555555; }
+    QSpinBox { background: #2B2B2B; color: #F0F0F0;
+               border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }
+    QComboBox { background: #2B2B2B; color: #F0F0F0;
+                border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }
+    QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;
+                                   selection-background-color: #3D5A80;
+                                   selection-color: #FFFFFF; }
+    QTreeWidget { background: #252525; color: #F0F0F0; border: none;
+                  alternate-background-color: #2B2B2B; }
+    QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QTreeWidget::item:hover { background: #333333; }
+    QTableWidget { background: #252525; color: #F0F0F0;
+                   gridline-color: #3A3A3A; border: 1px solid #3A3A3A; }
+    QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QHeaderView::section { background: #2B2B2B; color: #F0F0F0;
+                            border: 1px solid #3A3A3A; padding: 3px 6px;
+                            font-weight: bold; }
+    QLabel { color: #F0F0F0; background: transparent; }
+    QGroupBox { color: #F0F0F0; border: 1px solid #555555;
+                border-radius: 4px; margin-top: 8px; padding-top: 8px; }
+    QGroupBox::title { color: #F0F0F0; subcontrol-origin: margin; left: 8px; }
+    QListWidget { background: #252525; color: #F0F0F0; border: 1px solid #3A3A3A; }
+    QListWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QCheckBox { color: #F0F0F0; }
+    QRadioButton { color: #F0F0F0; }
+    QToolTip { background: #2B2B2B; color: #F0F0F0; border: 1px solid #555555; }
+"""
+
+_LIGHT_THEME_SS = """
+    QMainWindow, QWidget {
+        background: #F5F5F5;
+        color: #1A1A1A;
+    }
+    QDialog { background: #F5F5F5; color: #1A1A1A; }
+    QMenuBar { background: #E8E8E8; color: #1A1A1A; }
+    QMenuBar::item:selected { background: #D0D8E8; color: #000000; }
+    QMenu { background: #FFFFFF; color: #1A1A1A; border: 1px solid #BBBBBB; }
+    QMenu::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QMenu::item:disabled { color: #999999; }
+    QMenu::separator { height: 1px; background: #CCCCCC; margin: 3px 6px; }
+    QTabWidget::pane { background: #F5F5F5; border: 1px solid #CCCCCC; }
+    QTabBar::tab { background: #E0E0E0; color: #333333; min-width: 140px;
+                   padding: 4px 12px; border: 1px solid #CCCCCC; border-bottom: none; }
+    QTabBar::tab:selected { background: #F5F5F5; color: #000000; font-weight: bold; }
+    QTabBar::tab:hover:!selected { background: #EFEFEF; }
+    QStatusBar { background: #E8E8E8; color: #333333; }
+    QStatusBar QLabel { color: #333333; }
+    QDockWidget { color: #1A1A1A; }
+    QDockWidget::title { background: #3D5A80; color: #FFFFFF;
+                         padding: 4px 8px; font-weight: bold; }
+    QScrollBar:vertical { background: #E0E0E0; width: 10px; }
+    QScrollBar::handle:vertical { background: #AAAAAA; border-radius: 5px; }
+    QScrollBar:horizontal { background: #E0E0E0; height: 10px; }
+    QScrollBar::handle:horizontal { background: #AAAAAA; border-radius: 5px; }
+    QPushButton { background: #E0E0E0; color: #1A1A1A;
+                  border: 1px solid #AAAAAA; border-radius: 4px; padding: 4px 10px; }
+    QPushButton:hover   { background: #D0D0D0; }
+    QPushButton:pressed { background: #C0C0C0; }
+    QPushButton:disabled { color: #999999; background: #EBEBEB; }
+    QDialogButtonBox QPushButton { min-width: 72px; }
+    QLineEdit { background: #FFFFFF; color: #1A1A1A;
+                border: 1px solid #AAAAAA; border-radius: 3px; padding: 2px 4px; }
+    QTextEdit, QPlainTextEdit { background: #FFFFFF; color: #1A1A1A;
+                                 border: 1px solid #AAAAAA; }
+    QSpinBox { background: #FFFFFF; color: #1A1A1A;
+               border: 1px solid #AAAAAA; border-radius: 3px; padding: 2px 4px; }
+    QComboBox { background: #FFFFFF; color: #1A1A1A;
+                border: 1px solid #AAAAAA; border-radius: 3px; padding: 2px 4px; }
+    QComboBox QAbstractItemView { background: #FFFFFF; color: #1A1A1A;
+                                   selection-background-color: #3D5A80;
+                                   selection-color: #FFFFFF; }
+    QTreeWidget { background: #FFFFFF; color: #1A1A1A; border: none;
+                  alternate-background-color: #F0F4FA; }
+    QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QTreeWidget::item:hover { background: #E8EEF8; }
+    QTableWidget { background: #FFFFFF; color: #1A1A1A;
+                   gridline-color: #DDDDDD; border: 1px solid #CCCCCC; }
+    QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QHeaderView::section { background: #E8E8E8; color: #1A1A1A;
+                            border: 1px solid #CCCCCC; padding: 3px 6px;
+                            font-weight: bold; }
+    QLabel { color: #1A1A1A; background: transparent; }
+    QGroupBox { color: #1A1A1A; border: 1px solid #AAAAAA;
+                border-radius: 4px; margin-top: 8px; padding-top: 8px; }
+    QGroupBox::title { color: #1A1A1A; subcontrol-origin: margin; left: 8px; }
+    QListWidget { background: #FFFFFF; color: #1A1A1A; border: 1px solid #CCCCCC; }
+    QListWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QCheckBox { color: #1A1A1A; }
+    QRadioButton { color: #1A1A1A; }
+    QToolTip { background: #FFFDE7; color: #1A1A1A; border: 1px solid #BBBBBB; }
+"""
+
+_DARK_TOOLBAR_SS = """
+    QToolBar { background: #252525; border-bottom: 1px solid #3A3A3A;
+               padding: 2px 4px; spacing: 2px; }
+    QToolButton { background: transparent; color: #CCCCCC;
+                  border: 1px solid transparent; border-radius: 4px;
+                  padding: 3px 8px; font-size: 9pt; min-width: 44px; }
+    QToolButton:hover { background: #3A3A3A; border: 1px solid #555555; color: #FFFFFF; }
+    QToolButton:pressed { background: #2A2A2A; }
+    QToolButton:checked { background: #1A3A5C; border: 1px solid #3D5A80; color: #7EC8F0; }
+    QToolButton:disabled { color: #555555; }
+    QToolBar::separator { background: #3A3A3A; width: 1px; margin: 4px 6px; }
+"""
+
+_LIGHT_TOOLBAR_SS = """
+    QToolBar { background: #E8E8E8; border-bottom: 1px solid #CCCCCC;
+               padding: 2px 4px; spacing: 2px; }
+    QToolButton { background: transparent; color: #333333;
+                  border: 1px solid transparent; border-radius: 4px;
+                  padding: 3px 8px; font-size: 9pt; min-width: 44px; }
+    QToolButton:hover { background: #D8D8D8; border: 1px solid #AAAAAA; color: #000000; }
+    QToolButton:pressed { background: #C8C8C8; }
+    QToolButton:checked { background: #C8DCEC; border: 1px solid #3D5A80; color: #1A3A5C; }
+    QToolButton:disabled { color: #AAAAAA; }
+    QToolBar::separator { background: #CCCCCC; width: 1px; margin: 4px 6px; }
+"""
+
+_DARK_DOCK_SS = """
+    QDockWidget::title { background:#1F4E79; color:white;
+                         padding:4px 8px; font-weight:bold; }
+"""
+
+_LIGHT_DOCK_SS = """
+    QDockWidget::title { background:#3D5A80; color:white;
+                         padding:4px 8px; font-weight:bold; }
+"""
+
 # ─────────────────────────────────────────────────────────────────────
 # TextCommentEditDialog — edit or create a text comment marker
 # ─────────────────────────────────────────────────────────────────────
@@ -50,21 +217,6 @@ class TextCommentEditDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Text Comment")
         self.setMinimumWidth(400)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self.delete_requested = False
         self._page = page
         
@@ -126,38 +278,6 @@ class MarkerEditDialog(QDialog):
         self._signal_types = signal_types
         self._marker = marker
         
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
-
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.setVerticalSpacing(10)
@@ -325,21 +445,6 @@ class MarkerCountDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Configure {label}")
         self.setMinimumWidth(450)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QSpinBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self._descriptions = []
         self._label = label
         self._comment = comment
@@ -750,29 +855,6 @@ class MarkerOverlay(QWidget):
     # ------------------------------------------------------------------
     def _show_marker_menu(self, marker: dict, global_pos) -> None:
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item {
-                background: transparent;
-                color: #F0F0F0;
-                padding: 5px 24px 5px 12px;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled { color: #777777; }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-        """)
-
         info_act   = menu.addAction("ℹ️  View Info")
         edit_act   = menu.addAction("✏️  Edit…")
         menu.addSeparator()
@@ -1264,28 +1346,6 @@ class DraggablePdfView(QPdfView):
 
         # ── Marker mode: signal composition cascade ─────────────────────────
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item {
-                background: transparent;
-                color: #F0F0F0;
-                padding: 5px 24px 5px 12px;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled { color: #777777; }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-        """)
 
         # ── Paste option ────────────────────────────────────────────────────
         if self._overlay._clipboard:
@@ -1294,28 +1354,6 @@ class DraggablePdfView(QPdfView):
             menu.addSeparator()
 
        # ── Signal Compositions Section ──────────────────────────────────────────
-        _submenu_style = """
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item {
-                background: transparent;
-                color: #F0F0F0;
-                padding: 5px 24px 5px 12px;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled { color: #777777; }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-        """
 
         default_owner_id = db_ensure_default_owner()
         default_compositions = db_load_compositions_by_owner(default_owner_id)
@@ -1335,7 +1373,6 @@ class DraggablePdfView(QPdfView):
             # ── Default submenu ────────────────────────────────────────────────
             if default_compositions:
                 default_submenu = QMenu("Default", menu)
-                default_submenu.setStyleSheet(_submenu_style)
 
                 for comp in default_compositions:
                     composition_text = _get_signal_composition(comp)
@@ -1357,7 +1394,6 @@ class DraggablePdfView(QPdfView):
                     continue
 
                 proj_submenu = QMenu(pg["project_name"], menu)
-                proj_submenu.setStyleSheet(_submenu_style)
 
                 for comp in project_compositions:
                     composition_text = _get_signal_composition(comp)
@@ -2101,6 +2137,40 @@ def _db_connect() -> sqlite3.Connection:
 
     con.commit()
     return con
+
+
+# ---------------------------------------------------------------------------
+# Settings DB helpers  (theme persistence)
+# ---------------------------------------------------------------------------
+def _ensure_settings_table(con: sqlite3.Connection) -> None:
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+    con.commit()
+
+
+def db_load_theme() -> str:
+    """Return the saved theme name ('dark', 'light', or 'system'). Defaults to 'dark'."""
+    with _db_connect() as con:
+        _ensure_settings_table(con)
+        row = con.execute(
+            "SELECT value FROM app_settings WHERE key = 'theme'"
+        ).fetchone()
+    return row[0] if row else "dark"
+
+
+def db_save_theme(theme: str) -> None:
+    """Persist the active theme name."""
+    with _db_connect() as con:
+        _ensure_settings_table(con)
+        con.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('theme', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (theme,))
+        con.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -3215,37 +3285,6 @@ class SignalTypeConfigDialog(QDialog):
 
     def __init__(self, current_tree: list[dict], parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Configure Signal Types — Tree Editor")
         self.setMinimumWidth(720)
         self.setMinimumHeight(520)
@@ -3631,37 +3670,6 @@ class ExportMetadataDialog(QDialog):
     """Collects the three fixed header fields before export."""
     def __init__(self, meta: dict, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Export to Excel — Drawing Information")
         self.setFixedWidth(420)
 
@@ -3727,37 +3735,6 @@ class ExportColumnConfigDialog(QDialog):
 
     def __init__(self, current_cols: list[dict], parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Configure Export Columns")
         self.setMinimumWidth(620)
         self.setMinimumHeight(400)
@@ -4292,37 +4269,6 @@ class SessionMatchDialog(QDialog):
     """
     def __init__(self, current_path: str, matches: list[dict], parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Previous Session Detected")
         self.setMinimumWidth(580)
         self._chosen: dict | None = None
@@ -4429,37 +4375,6 @@ class ManualLinkDialog(QDialog):
     """
     def __init__(self, current_path: str, sessions: list[dict], parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Link to Previous Session")
         self.setMinimumWidth(620)
         self.setMinimumHeight(360)
@@ -4708,19 +4623,6 @@ class CompositionPlacementDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Place {composition['title']}")
         self.setMinimumWidth(380)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QSpinBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self._composition = composition
         
         # Header
@@ -4787,29 +4689,6 @@ class SignalCompositionTemplateDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Signal Composition Templates")
         self.setMinimumSize(900, 600)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QListWidget { background: #252525; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; }"
-            "QListWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self._templates = {}
         self._current_template_id = None
         self._build_ui()
@@ -5093,16 +4972,6 @@ class NoProjectDialog(QDialog):
         self.setWindowTitle("Signal Compositions Configuration")
         self.setMinimumWidth(500)
         self.setMinimumHeight(380)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 6px 12px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-        )
-        
         lay = QVBoxLayout()
         lay.setContentsMargins(24, 24, 24, 24)
         lay.setSpacing(16)
@@ -5172,33 +5041,6 @@ class SignalCompositionConfigDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Signal Compositions - {owner_name}")
         self.setMinimumSize(950, 650)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QListWidget { background: #252525; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; }"
-            "QListWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self._owner_id = owner_id
         self._owner_name = owner_name
         self._current_comp_id = None
@@ -5972,37 +5814,6 @@ class SignalCompositionConfigDialog(QDialog):
 class ProjectMetadataDialog(QDialog):
     def __init__(self, project: dict | None = None, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("New Project" if project is None else "Edit Project")
         self.setMinimumWidth(420)
 
@@ -6072,7 +5883,6 @@ class ProjectPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("background:#1E1E1E;")
         self._build_ui()
         self._validation_timer = QTimer(self)
         self._validation_timer.setSingleShot(True)
@@ -6102,22 +5912,6 @@ class ProjectPanel(QWidget):
             QAbstractItemView.SelectionMode.SingleSelection)
         self._tree.setAnimated(True)
         self._tree.setIndentation(16)
-        self._tree.setStyleSheet("""
-            QTreeWidget {
-                border: none;
-                font-size: 9pt;
-                background: #252525;
-                color: #F0F0F0;
-            }
-            QTreeWidget::item { padding: 3px 2px; }
-            QTreeWidget::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QTreeWidget::item:hover {
-                background: #333333;
-            }
-        """)
 
         # Use NoDragDrop on the tree so Qt never auto-reparents items.
         # We start drags manually via a viewport event filter.
@@ -6576,30 +6370,6 @@ class ProjectPanel(QWidget):
         item = self._tree.itemAt(pos)
         global_pos = self._tree.viewport().mapToGlobal(pos)
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item {
-                background: transparent;
-                color: #F0F0F0;
-                padding: 5px 24px 5px 12px;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled {
-                color: #777777;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-        """)
 
         if item is None:
             # Clicked on empty space
@@ -6891,23 +6661,6 @@ class MarkerInfoDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Marker Information")
         self.setMinimumWidth(500)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self._marker = marker
         self._build_ui()
     
@@ -7088,189 +6841,9 @@ class PDFViewer(QMainWindow):
         self.setWindowTitle(" Viewer")
         self.resize(1280, 900)
 
-        # ── Global dark theme ────────────────────────────────────────────
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background: #1E1E1E;
-                color: #F0F0F0;
-            }
-            QMenuBar {
-                background: #2B2B2B;
-                color: #F0F0F0;
-            }
-            QMenuBar::item:selected {
-                background: #3A3A3A;
-                color: #FFFFFF;
-            }
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled {
-                color: #777777;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-            QTabWidget::pane {
-                background: #1E1E1E;
-                border: 1px solid #3A3A3A;
-            }
-            QTabBar::tab {
-                background: #2B2B2B;
-                color: #CCCCCC;
-                min-width: 140px;
-                padding: 4px 12px;
-                border: 1px solid #3A3A3A;
-                border-bottom: none;
-            }
-            QTabBar::tab:selected {
-                background: #1E1E1E;
-                color: #FFFFFF;
-                font-weight: bold;
-            }
-            QTabBar::tab:hover:!selected {
-                background: #353535;
-            }
-            QStatusBar {
-                background: #2B2B2B;
-                color: #CCCCCC;
-            }
-            QStatusBar QLabel {
-                color: #CCCCCC;
-            }
-            QDockWidget {
-                color: #F0F0F0;
-            }
-            QDockWidget::title {
-                background: #1F4E79;
-                color: #FFFFFF;
-                padding: 4px 8px;
-                font-weight: bold;
-            }
-            QScrollBar:vertical {
-                background: #2B2B2B;
-                width: 10px;
-            }
-            QScrollBar::handle:vertical {
-                background: #555555;
-                border-radius: 5px;
-            }
-            QScrollBar:horizontal {
-                background: #2B2B2B;
-                height: 10px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #555555;
-                border-radius: 5px;
-            }
-            QPushButton {
-                background: #3A3A3A;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 4px 10px;
-            }
-            QPushButton:hover   { background: #4A4A4A; }
-            QPushButton:pressed { background: #2A2A2A; }
-            QPushButton:disabled { color: #666666; background: #2B2B2B; }
-            QLineEdit {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-                border-radius: 3px;
-                padding: 2px 4px;
-            }
-            QTextEdit, QPlainTextEdit {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QComboBox {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-                border-radius: 3px;
-                padding: 2px 4px;
-            }
-            QComboBox QAbstractItemView {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                selection-background-color: #3D5A80;
-                selection-color: #FFFFFF;
-            }
-            QTreeWidget {
-                background: #252525;
-                color: #F0F0F0;
-                border: none;
-                alternate-background-color: #2B2B2B;
-            }
-            QTreeWidget::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QTreeWidget::item:hover { background: #333333; }
-            QTableWidget {
-                background: #252525;
-                color: #F0F0F0;
-                gridline-color: #3A3A3A;
-                border: 1px solid #3A3A3A;
-            }
-            QTableWidget::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QHeaderView::section {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #3A3A3A;
-                padding: 3px 6px;
-                font-weight: bold;
-            }
-            QLabel {
-                color: #F0F0F0;
-                background: transparent;
-            }
-            QGroupBox {
-                color: #F0F0F0;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                margin-top: 8px;
-                padding-top: 8px;
-            }
-            QGroupBox::title {
-                color: #F0F0F0;
-                subcontrol-origin: margin;
-                left: 8px;
-            }
-            QDialog {
-                background: #1E1E1E;
-                color: #F0F0F0;
-            }
-            QListWidget {
-                background: #252525;
-                color: #F0F0F0;
-                border: 1px solid #3A3A3A;
-            }
-            QListWidget::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QCheckBox { color: #F0F0F0; }
-            QRadioButton { color: #F0F0F0; }
-            QToolTip {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-        """)
+        # ── Apply saved theme ─────────────────────────────────────────────
+        self._current_theme = db_load_theme()
+        self._apply_theme(self._current_theme, _persist=False)
 
         # Shared across all tabs — signal type list
         self._signal_types: list = db_load_signal_types()
@@ -7325,6 +6898,25 @@ class PDFViewer(QMainWindow):
         view_menu.addAction(self.act_prev_page)
         view_menu.addAction(self.act_next_page)
 
+        # ── Theme sub-menu ────────────────────────────────────────────────
+        theme_menu = view_menu.addMenu("🎨  &Theme")
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        self.act_theme_dark   = QAction("🌑  &Dark",           self, checkable=True)
+        self.act_theme_light  = QAction("☀️   &Light",          self, checkable=True)
+        self.act_theme_system = QAction("🖥️   &System Default", self, checkable=True)
+        for act in (self.act_theme_dark, self.act_theme_light, self.act_theme_system):
+            self._theme_group.addAction(act)
+            theme_menu.addAction(act)
+        # Check the currently active theme
+        _theme_acts = {"dark": self.act_theme_dark,
+                       "light": self.act_theme_light,
+                       "system": self.act_theme_system}
+        _theme_acts.get(self._current_theme, self.act_theme_dark).setChecked(True)
+        self.act_theme_dark.triggered.connect(lambda: self._apply_theme("dark"))
+        self.act_theme_light.triggered.connect(lambda: self._apply_theme("light"))
+        self.act_theme_system.triggered.connect(lambda: self._apply_theme("system"))
+
         # Edit menu
         edit_menu = mb.addMenu("&Edit")
         self.act_undo          = QAction("&Undo", self, shortcut="Ctrl+Z")
@@ -7359,44 +6951,7 @@ class PDFViewer(QMainWindow):
         tb.setMovable(False)
         tb.setFloatable(False)
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        tb.setStyleSheet("""
-            QToolBar {
-                background: #252525;
-                border-bottom: 1px solid #3A3A3A;
-                padding: 2px 4px;
-                spacing: 2px;
-            }
-            QToolButton {
-                background: transparent;
-                color: #CCCCCC;
-                border: 1px solid transparent;
-                border-radius: 4px;
-                padding: 3px 8px;
-                font-size: 9pt;
-                min-width: 44px;
-            }
-            QToolButton:hover {
-                background: #3A3A3A;
-                border: 1px solid #555555;
-                color: #FFFFFF;
-            }
-            QToolButton:pressed {
-                background: #2A2A2A;
-            }
-            QToolButton:checked {
-                background: #1A3A5C;
-                border: 1px solid #3D5A80;
-                color: #7EC8F0;
-            }
-            QToolButton:disabled {
-                color: #555555;
-            }
-            QToolBar::separator {
-                background: #3A3A3A;
-                width: 1px;
-                margin: 4px 6px;
-            }
-        """)
+        self._toolbar = tb  # set early so _apply_theme can find it
 
         def _tb_action(emoji: str, label: str, action: QAction) -> QAction:
             """Set the action text to 'emoji\\nlabel' for the toolbar button."""
@@ -7450,8 +7005,6 @@ class PDFViewer(QMainWindow):
         tb.addAction(self.act_mode_text)
         tb.addSeparator()
 
-        self._toolbar = tb
-
         # ── Tab widget ───────────────────────────────────────────────────
         self._tabs = QTabWidget()
         self._tabs.setTabsClosable(True)
@@ -7476,12 +7029,6 @@ class PDFViewer(QMainWindow):
         self._project_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetMovable |
             QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self._project_dock.setStyleSheet("""
-            QDockWidget::title {
-                background:#1F4E79; color:white;
-                padding:4px 8px; font-weight:bold;
-            }
-        """)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea,
                            self._project_dock)
         self._project_dock.hide()
@@ -7499,6 +7046,32 @@ class PDFViewer(QMainWindow):
         self.statusBar().addPermanentWidget(self.page_label)
         self.statusBar().addPermanentWidget(self._version_label)
         self.statusBar().showMessage("Open a PDF to begin.")
+
+    # ── Theme ──────────────────────────────────────────────────────────────
+    def _apply_theme(self, theme: str, _persist: bool = True) -> None:
+        """Switch the application-wide theme to 'dark', 'light', or 'system'."""
+        self._current_theme = theme
+        app = QApplication.instance()
+        if theme == "dark":
+            app.setStyleSheet(_DARK_THEME_SS)
+            if hasattr(self, "_toolbar"):
+                self._toolbar.setStyleSheet(_DARK_TOOLBAR_SS)
+            if hasattr(self, "_project_dock"):
+                self._project_dock.setStyleSheet(_DARK_DOCK_SS)
+        elif theme == "light":
+            app.setStyleSheet(_LIGHT_THEME_SS)
+            if hasattr(self, "_toolbar"):
+                self._toolbar.setStyleSheet(_LIGHT_TOOLBAR_SS)
+            if hasattr(self, "_project_dock"):
+                self._project_dock.setStyleSheet(_LIGHT_DOCK_SS)
+        else:  # system
+            app.setStyleSheet("")
+            if hasattr(self, "_toolbar"):
+                self._toolbar.setStyleSheet("")
+            if hasattr(self, "_project_dock"):
+                self._project_dock.setStyleSheet("")
+        if _persist:
+            db_save_theme(theme)
 
     def _connect_signals(self):
         self.act_open.triggered.connect(self.open_pdf)
