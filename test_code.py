@@ -5883,11 +5883,21 @@ class ProjectPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._theme = "dark"
         self._build_ui()
         self._validation_timer = QTimer(self)
         self._validation_timer.setSingleShot(True)
         self._validation_timer.timeout.connect(self._validate_files)
         self.refresh()
+
+    def set_theme(self, theme: str) -> None:
+        """Update the active theme and refresh tree colours."""
+        self._theme = theme
+        self.refresh()
+
+    def _file_text_color(self) -> QColor:
+        """Return the appropriate text colour for file items in the current theme."""
+        return QColor("#F0F0F0") if self._theme == "dark" else QColor("#1A1A1A")
 
     def _build_ui(self):
         # Toolbar buttons
@@ -6278,7 +6288,7 @@ class ProjectPanel(QWidget):
                 f_item.setText(0, f"📄  {os.path.basename(path)}")
                 f_item.setData(0, self._ROLE_KIND, "unassigned_file")
                 f_item.setData(0, self._ROLE_PATH, path)
-                f_item.setForeground(0, self._tree.palette().text())
+                f_item.setForeground(0, self._file_text_color())
                 f_item.setToolTip(0, path)
                 # Draggable but never shows a spurious expand arrow
                 f_item.setFlags(
@@ -6347,7 +6357,7 @@ class ProjectPanel(QWidget):
         item.setData(0, self._ROLE_MISSING, not exists)
         if exists:
             item.setText(0, f"📄  {name}")
-            item.setForeground(0, self._tree.palette().text())
+            item.setForeground(0, self._file_text_color())
             item.setToolTip(0, path)
         else:
             item.setText(0, f"⚠️  {name}")
@@ -7020,6 +7030,7 @@ class PDFViewer(QMainWindow):
 
         # ── Project panel dock ────────────────────────────────────────────
         self._project_panel = ProjectPanel()
+        self._project_panel.set_theme(self._current_theme)
         self._project_dock  = QDockWidget("Projects", self)
         self._project_dock.setWidget(self._project_panel)
         self._project_dock.setAllowedAreas(
@@ -7072,6 +7083,8 @@ class PDFViewer(QMainWindow):
                 self._project_dock.setStyleSheet("")
         if _persist:
             db_save_theme(theme)
+        if hasattr(self, "_project_panel"):
+            self._project_panel.set_theme(theme)
 
     def _connect_signals(self):
         self.act_open.triggered.connect(self.open_pdf)
