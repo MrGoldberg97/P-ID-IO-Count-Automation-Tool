@@ -1666,7 +1666,13 @@ def _write_fdf(fdf_path: str, pdf_path: str, markers: list[dict]) -> None:
         else:
             # ── Sticky-note Text annotation for IO markers ───────────────
             count   = int(m.get("count", 1))
-            label   = f"{count}{m['type']}" if count > 1 else m["type"]
+            # Composition markers store the fully-expanded label in m['type']
+            # (e.g. "4HDI 2HDO" when count=2 on a "2HDI 1HDO" composition),
+            # so never prepend count again.  Simple markers do need the prefix.
+            if m.get("is_composition"):
+                label = m["type"]
+            else:
+                label = f"{count}{m['type']}" if count > 1 else m["type"]
             comment = m.get("comment", "")
             desc    = m.get("description", "")
             parts   = [label]
