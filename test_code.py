@@ -271,7 +271,7 @@ class MarkerEditDialog(QDialog):
     def __init__(self, marker: dict, signal_types: list[dict], parent=None):
         super().__init__(parent)
         
-        self.setWindowTitle("Signal Composition - Edit")
+        self.setWindowTitle("Signal Typical - Edit")
         
         self.setFixedWidth(420)
         self.delete_requested = False
@@ -324,7 +324,7 @@ class MarkerEditDialog(QDialog):
         composition_text = _get_signal_composition(composition)
         obj_name_lbl = QLabel(f"<b>{composition['title']}</b>  ({composition_text})")
         obj_name_lbl.setStyleSheet("font-size: 10pt; color:#7EC8F0;")
-        form.addRow("<b>Composition:</b>", obj_name_lbl)
+        form.addRow("<b>Typical:</b>", obj_name_lbl)
 
         if composition.get("description"):
             first_line = composition["description"].split("\n")[0]
@@ -1366,7 +1366,7 @@ class DraggablePdfView(QPdfView):
         )
 
         if not has_any_composition:
-            no_comp_act = menu.addAction("(No compositions configured)")
+            no_comp_act = menu.addAction("(No typicals configured)")
             no_comp_act.setEnabled(False)
             menu.addSeparator()
         else:
@@ -4735,7 +4735,7 @@ class SignalCompositionTemplateDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Signal Composition Templates")
+        self.setWindowTitle("Signal Typical Templates")
         self.setMinimumSize(900, 600)
         self._templates = {}
         self._current_template_id = None
@@ -4748,9 +4748,9 @@ class SignalCompositionTemplateDialog(QDialog):
         lay.setSpacing(10)
         
         lay.addWidget(QLabel(
-            "<b>Signal Composition Templates</b><br>"
+            "<b>Signal Typical Templates</b><br>"
             "<span style='color:#AAAAAA;font-size:8pt;'>"
-            "Create and manage reusable signal composition templates.</span>"))
+            "Create and manage reusable signal typical templates.</span>"))
         
         # Left panel: template list
         left_lay = QVBoxLayout()
@@ -5017,7 +5017,7 @@ class NoProjectDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Signal Compositions Configuration")
+        self.setWindowTitle("Signal Typicals Configuration")
         self.setMinimumWidth(500)
         self.setMinimumHeight(380)
         lay = QVBoxLayout()
@@ -5031,15 +5031,15 @@ class NoProjectDialog(QDialog):
         lay.addWidget(title)
         
         # Main message
-        msg = QLabel("<b>Signal Compositions Configuration</b>")
+        msg = QLabel("<b>Signal Typicals Configuration</b>")
         msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         msg.setStyleSheet("font-size: 14pt; color: #7EC8F0;")
         lay.addWidget(msg)
         
         # Instructions
         instructions = QLabel(
-            "Signal compositions are configured on a <b>per-project basis</b>.<br><br>"
-            "To configure signal compositions:<br><br>"
+            "Signal typicals are configured on a <b>per-project basis</b>.<br><br>"
+            "To configure signal typicals:<br><br>"
             "<span style='color: #90CAF9;'><b>1. Open or Create a Project</b></span><br>"
             "   • Click the <b>Project Panel</b> (📁) in the toolbar<br>"
             "   • Create a new project or open an existing one<br><br>"
@@ -5048,8 +5048,8 @@ class NoProjectDialog(QDialog):
             "   • Or right-click project → Add PDF file(s)<br><br>"
             "<span style='color: #90CAF9;'><b>3. Open PDF and Configure</b></span><br>"
             "   • Open the PDF file from the project<br>"
-            "   • Go to Edit → Configure Signal Compositions<br><br>"
-            "Signal compositions will then be available when placing markers<br>"
+            "   • Go to Edit → Configure Signal Typicals<br><br>"
+            "Signal typicals will then be available when placing markers<br>"
             "on that project's PDFs."
         )
         instructions.setWordWrap(True)
@@ -5087,7 +5087,7 @@ class SignalCompositionConfigDialog(QDialog):
             owner_name: Display name (project name)
         """
         super().__init__(parent)
-        self.setWindowTitle(f"Signal Compositions - {owner_name}")
+        self.setWindowTitle(f"Signal Typicals - {owner_name}")
         self.setMinimumSize(950, 650)
         self._owner_id = owner_id
         self._owner_name = owner_name
@@ -5102,13 +5102,13 @@ class SignalCompositionConfigDialog(QDialog):
         lay.setSpacing(10)
         
         lay.addWidget(QLabel(
-            f"<b>Signal Compositions for {self._owner_name}</b><br>"
+            f"<b>Signal Typicals for {self._owner_name}</b><br>"
             "<span style='color:#AAAAAA;font-size:8pt;'>"
-            "Define signal compositions with detailed signal information.</span>"))
+            "Define signal typicals with detailed signal information.</span>"))
         
         # ── Left Panel: Composition List ──────────────────────────────────
         left_lay = QVBoxLayout()
-        left_lay.addWidget(QLabel("<b>Compositions:</b>"))
+        left_lay.addWidget(QLabel("<b>Typicals:</b>"))
         
         self.comp_list = QListWidget()
         self.comp_list.itemSelectionChanged.connect(self._on_comp_selected)
@@ -5131,7 +5131,7 @@ class SignalCompositionConfigDialog(QDialog):
         right_lay = QVBoxLayout()
         
         # Title and description
-        right_lay.addWidget(QLabel("<b>Composition Details:</b>"))
+        right_lay.addWidget(QLabel("<b>Typical Details:</b>"))
         
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText("e.g., On-Off Valve")
@@ -5203,7 +5203,7 @@ class SignalCompositionConfigDialog(QDialog):
         right_lay.addLayout(cm_tx_lay)
 
         # Composition display
-        right_lay.addWidget(QLabel("<b>Composition:</b>"))
+        right_lay.addWidget(QLabel("<b>Typical:</b>"))
         self.composition_display = QLabel("")
         self.composition_display.setStyleSheet("color: #7EC8F0; font-weight: bold; font-size: 11pt;")
         right_lay.addWidget(self.composition_display)
@@ -6981,7 +6981,7 @@ class PDFViewer(QMainWindow):
         self.act_redo          = QAction("&Redo", self, shortcut="Ctrl+Y")
         self.act_configure     = QAction("&Configure Signal Types…",  self, shortcut="Ctrl+,")
         self.act_configure_compositions = QAction(
-            "🔧 Configure Signal &Compositions…", self, shortcut="Ctrl+Shift+,")
+            "🔧 Configure Signal &Typicals…", self, shortcut="Ctrl+Shift+,")
         self.act_config_export = QAction("Configure &Export Columns…", self)
         self.act_export_signal_types = QAction("📤  Export Signal Types to Excel…", self)
         self.act_import_signal_types = QAction("📥  Import Signal Types from XML/Excel…", self)
