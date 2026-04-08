@@ -3961,17 +3961,16 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
         name, type, desc1, desc2, tag_name, comments, page, file_name
 
     For composition markers the output is:
-        1. One row per Control Module (if present, i.e. not "NA")
-        2. One row per Transmitter   (if present, i.e. not "NA")
-        3. One row per signal in the composition (signals are already
-           listed individually, so "2HDI" produces two rows)
+        1. One row for the Control Module (if present, i.e. not "NA")
+        2. One row for the Transmitter   (if present, i.e. not "NA")
+        3. One row per signal × marker count
+           (e.g. composition "2HDI 1HDO" placed with count=2 → 4 HDI + 2 HDO rows)
 
-    Description 2 (desc2) is the compact composition summary ("2HDI 1HDO")
-    and is repeated on every row belonging to that composition.
+    Description 2 (desc2) is the composition title (first field in the Signal
+    Configuration menu) and is repeated on every row of the same composition.
     Comments is the composition description and is also repeated.
-    Tag Name is  prefix-SignalType-suffix  for signal rows, "NA" for CM/TX rows.
-    Prefix and suffix are taken from the marker's tag_parts (user-entered when
-    placing the composition marker on the drawing).
+    Tag Name for signals is  (prefix or "NA")-(signal_type)-(suffix or "NA").
+    Tag Name for CM/TX rows is always "NA".
 
     For plain (non-composition) markers a single row is produced using the
     marker's own type / comment / description.
@@ -3985,15 +3984,18 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                 continue
 
             tag_parts = m.get("tag_parts") or {}
-            prefix    = tag_parts.get("prefix", "")
-            suffix    = tag_parts.get("suffix", "")
+            prefix    = tag_parts.get("prefix", "") or ""
+            suffix    = tag_parts.get("suffix", "") or ""
+            # count stored in tag_parts["count"] by CompositionPlacementDialog
+            count     = int(tag_parts.get("count", m.get("count", 1)) or 1)
 
-            desc2    = _get_signal_composition(composition)
+            # Description 2 = composition title (first field in Signal Config menu)
+            desc2    = composition.get("title", "")
             comments = composition.get("description", "")
             file_nm  = m.get("file_name", "")
             page     = m.get("page", 0)
 
-            # ── Control Module row ───────────────────────────────────
+            # ── Control Module row (not multiplied by count) ─────────
             cm_name = composition.get("control_module", "NA") or "NA"
             if cm_name and cm_name.strip().upper() != "NA":
                 expanded.append({
@@ -4007,7 +4009,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                     "file_name": file_nm,
                 })
 
-            # ── Transmitter row ──────────────────────────────────────
+            # ── Transmitter row (not multiplied by count) ────────────
             tx_name = composition.get("transmitter", "NA") or "NA"
             if tx_name and tx_name.strip().upper() != "NA":
                 expanded.append({
@@ -4021,19 +4023,13 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                     "file_name": file_nm,
                 })
 
-            # ── One row per signal ───────────────────────────────────
+            # ── Signal rows × count ──────────────────────────────────
             for signal in composition.get("signals", []):
                 sig_type = signal.get("signal_type", "")
-                tag_parts_list = []
-                if prefix:
-                    tag_parts_list.append(prefix)
-                if sig_type:
-                    tag_parts_list.append(sig_type)
-                if suffix:
-                    tag_parts_list.append(suffix)
-                tag_name = "-".join(tag_parts_list) if tag_parts_list else "NA"
+                # Always produce prefix-sigtype-suffix; use "NA" where absent
+                tag_name = f"{prefix or 'NA'}-{sig_type}-{suffix or 'NA'}"
 
-                expanded.append({
+                row = {
                     "name":      signal.get("signal_name", ""),
                     "type":      sig_type,
                     "desc1":     signal.get("signal_description", ""),
@@ -4042,7 +4038,9 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                     "comments":  comments,
                     "page":      page,
                     "file_name": file_nm,
-                })
+                }
+                for _ in range(count):
+                    expanded.append(row.copy())
         else:
             # ── Plain (non-composition) marker ───────────────────────
             sig_type = (m.get("signal_type") or m.get("type") or "")
