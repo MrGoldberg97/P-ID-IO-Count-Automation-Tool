@@ -6278,7 +6278,7 @@ class ProjectPanel(QWidget):
                 f_item.setText(0, f"📄  {os.path.basename(path)}")
                 f_item.setData(0, self._ROLE_KIND, "unassigned_file")
                 f_item.setData(0, self._ROLE_PATH, path)
-                f_item.setForeground(0, QColor("#F0F0F0"))
+                f_item.setForeground(0, self._tree.palette().text())
                 f_item.setToolTip(0, path)
                 # Draggable but never shows a spurious expand arrow
                 f_item.setFlags(
@@ -6347,7 +6347,7 @@ class ProjectPanel(QWidget):
         item.setData(0, self._ROLE_MISSING, not exists)
         if exists:
             item.setText(0, f"📄  {name}")
-            item.setForeground(0, QColor("#F0F0F0"))
+            item.setForeground(0, self._tree.palette().text())
             item.setToolTip(0, path)
         else:
             item.setText(0, f"⚠️  {name}")
