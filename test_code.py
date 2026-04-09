@@ -5358,7 +5358,7 @@ class SignalCompositionConfigDialog(QDialog):
         self.comp_tree.setAcceptDrops(True)
         self.comp_tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.comp_tree.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.comp_tree.model().rowsInserted.connect(self._on_tree_rows_inserted)
+        self.comp_tree.model().rowsInserted.connect(self._schedule_tree_sync)
         left_lay.addWidget(self.comp_tree, stretch=1)
 
         # Typical buttons (new / delete)
@@ -5561,10 +5561,12 @@ class SignalCompositionConfigDialog(QDialog):
         template_lay.addStretch()
         lay.addLayout(template_lay)
         
-        # Dialog buttons
+        # Dialog buttons – OK, Apply (save without closing), Cancel
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                              QDialogButtonBox.StandardButton.Apply |
                               QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._on_accept)
+        bb.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._on_apply)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
         
@@ -5912,11 +5914,21 @@ class SignalCompositionConfigDialog(QDialog):
             pnc.discard(old_name)
         self._populate_tree()
 
-    def _on_tree_rows_inserted(self, parent_index, first: int, last: int):
+    def _schedule_tree_sync(self):
         """
-        Called after an internal-move drag-drop inserts rows.
-        Walk through every category item and sync the composition's category
-        field to match the parent category the item now lives under.
+        Schedule a category-sync for after the current drag-drop operation
+        completes.  rowsInserted fires before Qt removes the item from its
+        original position (InternalMove), so deferring to the next event-loop
+        iteration guarantees the tree is in its final state.
+        """
+        QTimer.singleShot(0, self._sync_categories_from_tree)
+
+    def _sync_categories_from_tree(self):
+        """
+        Walk every category item in the tree and update each composition's
+        category field to match where it now lives.  Then rebuild the tree so
+        that all items carry the correct drag-enable flags (Qt's InternalMove
+        clones items without preserving custom flags).
         """
         root = self.comp_tree.invisibleRootItem()
         for ci in range(root.childCount()):
@@ -5932,6 +5944,8 @@ class SignalCompositionConfigDialog(QDialog):
                     if comp["id"] == comp_id:
                         comp["category"] = cat_value
                         break
+        # Rebuild tree to restore correct item flags for all items.
+        self._populate_tree()
 
     def _add_desc_field(self, text: str = "") -> None:
         """Add a description line field (max 5)."""
@@ -6115,7 +6129,20 @@ class SignalCompositionConfigDialog(QDialog):
             self._update_composition_display()
     
     def _on_accept(self):
-        """Validate and save changes."""
+        """Validate, save changes and close the dialog."""
+        if self._do_save():
+            self.accept()
+
+    def _on_apply(self):
+        """Validate and save changes without closing the dialog."""
+        if self._do_save():
+            QMessageBox.information(self, "Saved", "Changes saved successfully.")
+
+    def _do_save(self) -> bool:
+        """
+        Validate and persist all compositions to the database.
+        Returns True on success, False if validation or a DB error occurred.
+        """
         # Save current composition if one is being edited
         if self._current_comp_id is not None:
             self._save_current_composition()
@@ -6129,27 +6156,27 @@ class SignalCompositionConfigDialog(QDialog):
                 QMessageBox.warning(
                     self, "Validation Error",
                     "All compositions must have a title.")
-                return
+                return False
 
             if not comp.get("control_module", "").strip():
                 QMessageBox.warning(
                     self, "Validation Error",
                     f"Composition '{comp['title']}': Control Module Name is mandatory. "
                     "Enter a value or use NA.")
-                return
+                return False
 
             if not comp.get("transmitter", "").strip():
                 QMessageBox.warning(
                     self, "Validation Error",
                     f"Composition '{comp['title']}': Transmitter Name is mandatory. "
                     "Enter a value or use NA.")
-                return
+                return False
 
             if not comp["signals"]:
                 QMessageBox.warning(
                     self, "Validation Error",
                     f"Composition '{comp['title']}' must have at least one signal.")
-                return
+                return False
             
             # Check mandatory fields in each signal
             for sig in comp["signals"]:
@@ -6157,19 +6184,19 @@ class SignalCompositionConfigDialog(QDialog):
                     QMessageBox.warning(
                         self, "Validation Error",
                         f"In composition '{comp['title']}': Signal Name, Type, and Description are mandatory.")
-                    return
+                    return False
                 if not sig.get("prefix", "").strip():
                     QMessageBox.warning(
                         self, "Validation Error",
                         f"In composition '{comp['title']}': Prefix is mandatory per signal. "
                         "Enter a value or use NA.")
-                    return
+                    return False
                 if not sig.get("suffix", "").strip():
                     QMessageBox.warning(
                         self, "Validation Error",
                         f"In composition '{comp['title']}': Suffix is mandatory per signal. "
                         "Enter a value or use NA.")
-                    return
+                    return False
         
         # Save to database
         for comp in self._compositions:
@@ -6209,9 +6236,9 @@ class SignalCompositionConfigDialog(QDialog):
                     )
             except Exception as e:
                 QMessageBox.warning(self, "Error", str(e))
-                return
+                return False
 
-        self.accept()
+        return True
         
     def _save_current_composition(self):
         """Save the currently edited composition into self._compositions."""
