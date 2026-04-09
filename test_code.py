@@ -5331,6 +5331,7 @@ class SignalCompositionConfigDialog(QDialog):
         self._owner_name = owner_name
         self._current_comp_id = None
         self._compositions = db_load_compositions_by_owner(owner_id)
+        self._populating_tree = False  # re-entrancy guard for _populate_tree
         
         self._build_ui()
     
@@ -5575,42 +5576,50 @@ class SignalCompositionConfigDialog(QDialog):
 
     def _populate_tree(self):
         """Populate the tree of typicals grouped by category."""
-        self.comp_tree.clear()
-        # Group by category
-        groups: dict[str, list] = {}
-        for comp in self._compositions:
-            cat = comp.get("category", "").strip() or "(General)"
-            groups.setdefault(cat, []).append(comp)
+        # Guard against re-entrant calls: rowsInserted fires while we add items,
+        # which would schedule _sync_categories_from_tree → _populate_tree again.
+        if self._populating_tree:
+            return
+        self._populating_tree = True
+        try:
+            self.comp_tree.clear()
+            # Group by category
+            groups: dict[str, list] = {}
+            for comp in self._compositions:
+                cat = comp.get("category", "").strip() or "(General)"
+                groups.setdefault(cat, []).append(comp)
 
-        # Also include pending (empty) categories created with "Add Category"
-        for pending in getattr(self, "_pending_new_categories", set()):
-            if pending not in groups:
-                groups[pending] = []
+            # Also include pending (empty) categories created with "Add Category"
+            for pending in getattr(self, "_pending_new_categories", set()):
+                if pending not in groups:
+                    groups[pending] = []
 
-        # Sort: (General) first, then alphabetical
-        sorted_cats = sorted(groups.keys(),
-                             key=lambda c: ("" if c == "(General)" else c.lower()))
-        for cat in sorted_cats:
-            cat_item = QTreeWidgetItem(self.comp_tree, [cat])
-            cat_item.setData(0, Qt.ItemDataRole.UserRole, None)  # not a composition
-            font = cat_item.font(0)
-            font.setBold(True)
-            cat_item.setFont(0, font)
-            # Make category items selectable (for rename/delete) and droppable
-            # so that typicals can be dragged onto them.
-            cat_item.setFlags(
-                Qt.ItemFlag.ItemIsEnabled
-                | Qt.ItemFlag.ItemIsSelectable
-                | Qt.ItemFlag.ItemIsDropEnabled)
-            for comp in groups[cat]:
-                child = QTreeWidgetItem(cat_item, [comp["title"]])
-                child.setData(0, Qt.ItemDataRole.UserRole, comp["id"])
-                # Leaf items must be draggable so they can be moved between categories.
-                child.setFlags(
+            # Sort: (General) first, then alphabetical
+            sorted_cats = sorted(groups.keys(),
+                                 key=lambda c: ("" if c == "(General)" else c.lower()))
+            for cat in sorted_cats:
+                cat_item = QTreeWidgetItem(self.comp_tree, [cat])
+                cat_item.setData(0, Qt.ItemDataRole.UserRole, None)  # not a composition
+                font = cat_item.font(0)
+                font.setBold(True)
+                cat_item.setFont(0, font)
+                # Make category items selectable (for rename/delete) and droppable
+                # so that typicals can be dragged onto them.
+                cat_item.setFlags(
                     Qt.ItemFlag.ItemIsEnabled
                     | Qt.ItemFlag.ItemIsSelectable
-                    | Qt.ItemFlag.ItemIsDragEnabled)
-            cat_item.setExpanded(True)
+                    | Qt.ItemFlag.ItemIsDropEnabled)
+                for comp in groups[cat]:
+                    child = QTreeWidgetItem(cat_item, [comp["title"]])
+                    child.setData(0, Qt.ItemDataRole.UserRole, comp["id"])
+                    # Leaf items must be draggable so they can be moved between categories.
+                    child.setFlags(
+                        Qt.ItemFlag.ItemIsEnabled
+                        | Qt.ItemFlag.ItemIsSelectable
+                        | Qt.ItemFlag.ItemIsDragEnabled)
+                cat_item.setExpanded(True)
+        finally:
+            self._populating_tree = False
     
     def _on_comp_selected(self):
         """When user selects a typical from the tree."""
