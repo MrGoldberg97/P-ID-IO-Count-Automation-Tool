@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QGroupBox, QTreeWidget, QTreeWidgetItem,
     QPlainTextEdit, QStackedWidget, QTabWidget, QSizePolicy,
-    QDockWidget, QTextEdit, QScrollArea, QSpinBox
+    QDockWidget, QTextEdit, QScrollArea, QSpinBox, QStyle
 )
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QTimer
 from PySide6.QtGui import (QPainter, QColor, QPen, QPainterPath, QBrush,
