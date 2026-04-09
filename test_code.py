@@ -258,40 +258,48 @@ class TextCommentEditDialog(QDialog):
         return self.text_edit.toPlainText().strip()
     
 # ---------------------------------------------------------------------------
-# MarkerEditDialog  — view info, edit signal type, or delete
+# MarkerEditDialog  — edit a signal typical marker
 # ---------------------------------------------------------------------------
 class MarkerEditDialog(QDialog):
     """
-    Opens when a marker is clicked.
-    Returns QDialog.Accepted  → caller should save the new type.
-    Returns QDialog.Rejected  → no change  (Cancel pressed).
-    delete_requested property → True if the user pressed Delete.
+    Opens when a marker is right-click -> Edit.
+    Shows the full Signal Typical details; all fields are editable except
+    Control Module Name, Transmitter Name, Signal Name column, Type column.
+    The count (multiplier) spinner is NOT shown.
+    Any extra columns defined in the Signal Typical configuration are
+    displayed and editable here too.
     """
+
+    _RO_BG = "#2A2A2A"
 
     def __init__(self, marker: dict, signal_types: list[dict], parent=None):
         super().__init__(parent)
-        
-        self.setWindowTitle("Signal Typical - Edit")
-        
-        self.setFixedWidth(420)
+        self.setWindowTitle("Edit Signal Typical")
+        self.setMinimumSize(700, 560)
         self.delete_requested = False
         self._signal_types = signal_types
         self._marker = marker
-        
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form.setVerticalSpacing(10)
-        form.setContentsMargins(16, 16, 16, 8)
 
-        # ── Build form for composition marker ──────────────────────────
-        self._build_composition_form(form, marker)
+        lay = QVBoxLayout()
+        lay.setContentsMargins(16, 14, 16, 10)
+        lay.setSpacing(10)
+        self.setLayout(lay)
 
-        # Read-only page info (both types)
+        composition_id = marker.get("composition_id")
+        self._composition = (db_load_signal_composition(composition_id)
+                             if composition_id else None)
+
+        if not self._composition:
+            lay.addWidget(QLabel("Warning: Signal Typical not found in configuration."))
+        else:
+            self._build_composition_form(lay)
+
+        # Page info
         page_lbl = QLabel(f"<b>Page:</b> {marker['page'] + 1}")
         page_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        form.addRow(page_lbl)
+        lay.addWidget(page_lbl)
 
-        # Buttons: OK / Delete / Cancel
+        # Buttons
         buttons = QDialogButtonBox()
         ok_btn     = buttons.addButton(QDialogButtonBox.StandardButton.Ok)
         cancel_btn = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
@@ -300,121 +308,161 @@ class MarkerEditDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         del_btn.clicked.connect(self._on_delete)
         del_btn.setStyleSheet("color: #B71C1C; font-weight: bold;")
+        lay.addWidget(buttons)
 
-        outer = QVBoxLayout()
-        outer.setContentsMargins(16, 14, 16, 8)
-        outer.addLayout(form)
-        outer.addWidget(buttons)
-        self.setLayout(outer)
+    def _build_composition_form(self, lay: QVBoxLayout):
+        comp = self._composition
+        tag_parts = self._marker.get("tag_parts", {})
+
+        # Title
+        composition_text = _get_signal_composition(comp)
+        title_lbl = QLabel(
+            f"<b>{comp['title']}</b>"
+            + (f"  <span style='color:#7EC8F0;'>{composition_text}</span>"
+               if composition_text else ""))
+        title_lbl.setStyleSheet("font-size: 11pt;")
+        lay.addWidget(title_lbl)
+
+        # Description
+        desc_row = QHBoxLayout()
+        desc_row.addWidget(QLabel("<b>Description:</b>"))
+        self.desc_edit = QLineEdit(
+            tag_parts.get("description", comp.get("description", "")))
+        desc_row.addWidget(self.desc_edit)
+        lay.addLayout(desc_row)
+
+        # Control Module + Transmitter side by side
+        cm_tx_lay = QHBoxLayout()
+
+        cm_group = QGroupBox("Control Module")
+        cm_group.setStyleSheet(
+            "QGroupBox{border:1px solid #555;border-radius:4px;margin-top:6px;"
+            "color:#F0F0F0;font-weight:bold;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}")
+        cm_form = QFormLayout(cm_group)
+        cm_form.setContentsMargins(8, 8, 8, 4)
+        cm_form.setSpacing(4)
+        _cm_name_lbl = QLabel(comp.get("control_module", "NA") or "NA")
+        _cm_name_lbl.setStyleSheet("color:#AAAAAA;")
+        cm_form.addRow("Name:", _cm_name_lbl)
+        self.cm_type_edit = QLineEdit(
+            tag_parts.get("cm_type", comp.get("cm_type", "NA") or "NA"))
+        self.cm_desc_edit = QLineEdit(
+            tag_parts.get("cm_description", comp.get("cm_description", "NA") or "NA"))
+        cm_form.addRow("Type:", self.cm_type_edit)
+        cm_form.addRow("Description:", self.cm_desc_edit)
+        cm_tx_lay.addWidget(cm_group)
+
+        tx_group = QGroupBox("Transmitter")
+        tx_group.setStyleSheet(
+            "QGroupBox{border:1px solid #555;border-radius:4px;margin-top:6px;"
+            "color:#F0F0F0;font-weight:bold;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}")
+        tx_form = QFormLayout(tx_group)
+        tx_form.setContentsMargins(8, 8, 8, 4)
+        tx_form.setSpacing(4)
+        _tx_name_lbl = QLabel(comp.get("transmitter", "NA") or "NA")
+        _tx_name_lbl.setStyleSheet("color:#AAAAAA;")
+        tx_form.addRow("Name:", _tx_name_lbl)
+        self.tx_type_edit = QLineEdit(
+            tag_parts.get("tx_type", comp.get("tx_type", "NA") or "NA"))
+        self.tx_desc_edit = QLineEdit(
+            tag_parts.get("tx_description", comp.get("tx_description", "NA") or "NA"))
+        tx_form.addRow("Type:", self.tx_type_edit)
+        tx_form.addRow("Description:", self.tx_desc_edit)
+        cm_tx_lay.addWidget(tx_group)
+        lay.addLayout(cm_tx_lay)
+
+        # Signals table — mirrors SignalCompositionConfigDialog layout
+        extra_headers = comp.get("extra_column_headers", [])
+        fixed_cols = ["Signal Name", "Type", "Description", "Prefix", "Suffix"]
+        all_headers = fixed_cols + extra_headers
+        lay.addWidget(QLabel("<b>Signals:</b>"))
+        self.signals_table = QTableWidget(0, len(all_headers))
+        self.signals_table.setHorizontalHeaderLabels(all_headers)
+        hdr = self.signals_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        for ci in range(3, len(all_headers)):
+            hdr.setSectionResizeMode(ci, QHeaderView.ResizeMode.Interactive)
+        self.signals_table.setColumnWidth(0, 110)
+        self.signals_table.setColumnWidth(1, 80)
+        self.signals_table.verticalHeader().setVisible(False)
+        self.signals_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        self.signals_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked)
+
+        overrides = tag_parts.get("signal_overrides", [])
+        signals = comp.get("signals", [])
+        for i, sig in enumerate(signals):
+            ov = overrides[i] if i < len(overrides) else {}
+            r = self.signals_table.rowCount()
+            self.signals_table.insertRow(r)
+
+            # Read-only: Signal Name (col 0), Type (col 1)
+            for ci, val in enumerate([sig.get("signal_name", ""),
+                                       sig.get("signal_type", "")]):
+                item = QTableWidgetItem(val)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                item.setBackground(QBrush(QColor(self._RO_BG)))
+                self.signals_table.setItem(r, ci, item)
+
+            # Editable: Description (2), Prefix (3), Suffix (4)
+            self.signals_table.setItem(r, 2, QTableWidgetItem(
+                ov.get("signal_description", sig.get("signal_description", ""))))
+            self.signals_table.setItem(r, 3, QTableWidgetItem(
+                ov.get("prefix", sig.get("prefix", "NA"))))
+            self.signals_table.setItem(r, 4, QTableWidgetItem(
+                ov.get("suffix", sig.get("suffix", "NA"))))
+
+            # Extra columns (editable)
+            ov_extras = ov.get("extra_column_values",
+                               sig.get("extra_column_values", []))
+            for ec in range(len(extra_headers)):
+                val = ov_extras[ec] if ec < len(ov_extras) else ""
+                self.signals_table.setItem(r, 5 + ec, QTableWidgetItem(val))
+
+        lay.addWidget(self.signals_table, stretch=1)
 
     def _on_delete(self):
         self.delete_requested = True
         self.accept()
-    
-    def _build_composition_form(self, form: QFormLayout, marker: dict):
-        """Build the form for editing composition markers."""
-        composition_id = marker.get("composition_id")
-        composition = db_load_signal_composition(composition_id) if composition_id else None
-
-        if not composition:
-            form.addRow(QLabel("⚠️ Composition not found in configuration"))
-            return
-
-        # Composition name (read-only)
-        composition_text = _get_signal_composition(composition)
-        obj_name_lbl = QLabel(f"<b>{composition['title']}</b>  ({composition_text})")
-        obj_name_lbl.setStyleSheet("font-size: 10pt; color:#7EC8F0;")
-        form.addRow("<b>Typical:</b>", obj_name_lbl)
-
-        if composition.get("description"):
-            first_line = composition["description"].split("\n")[0]
-            if first_line:
-                comment_lbl = QLabel(first_line)
-                comment_lbl.setStyleSheet("color:#AAAAAA; font-size: 9pt;")
-                form.addRow("", comment_lbl)
-
-        # Count field
-        tag_parts = marker.get("tag_parts", {})
-
-        count_widget = QWidget()
-        count_layout = QHBoxLayout(count_widget)
-        count_layout.setContentsMargins(0, 0, 0, 0)
-        count_layout.setSpacing(6)
-
-        self.count_spin = QSpinBox()
-        self.count_spin.setMinimum(1)
-        self.count_spin.setMaximum(999)
-        self.count_spin.setValue(int(tag_parts.get("count", marker.get("count", 1))))
-        self.count_spin.setMaximumWidth(80)
-        count_layout.addWidget(self.count_spin)
-        count_layout.addWidget(QLabel("(multiplier for all signals)"))
-        count_layout.addStretch()
-        form.addRow("<b>Count:</b>", count_widget)
 
     @property
     def tag_parts(self) -> dict:
-        """Return the tag parts for composition markers."""
+        """Return all editable overrides (no count)."""
+        if not self._composition:
+            return {}
+        extra_headers = self._composition.get("extra_column_headers", [])
+        overrides = []
+        for r in range(self.signals_table.rowCount()):
+            ev = [
+                (self.signals_table.item(r, 5 + ec) or QTableWidgetItem()).text()
+                for ec in range(len(extra_headers))
+            ]
+            overrides.append({
+                "signal_description": (self.signals_table.item(r, 2) or QTableWidgetItem()).text(),
+                "prefix":             (self.signals_table.item(r, 3) or QTableWidgetItem()).text(),
+                "suffix":             (self.signals_table.item(r, 4) or QTableWidgetItem()).text(),
+                "extra_column_values": ev,
+            })
         return {
-            "count": self.count_spin.value(),
+            "description":    self.desc_edit.text().strip(),
+            "cm_type":        self.cm_type_edit.text().strip(),
+            "cm_description": self.cm_desc_edit.text().strip(),
+            "tx_type":        self.tx_type_edit.text().strip(),
+            "tx_description": self.tx_desc_edit.text().strip(),
+            "signal_overrides": overrides,
         }
 
-    def _on_type_changed(self, text: str) -> None:
-        """Auto-fill description from config when user picks a predefined type."""
-        comment = self._label_comment_map.get(text.strip(), "")
-        self.comment_edit.setText(comment)
-
-    def _add_desc_field(self, text: str = "") -> None:
-        if len(self._desc_edits) >= 5:
-            return
-        row = QHBoxLayout()
-        edit = QLineEdit(text)
-        edit.setPlaceholderText(f"Note {len(self._desc_edits) + 1}…")
-        rm_btn = QPushButton("✕")
-        rm_btn.setFixedWidth(24)
-        rm_btn.setStyleSheet(
-            "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
-            " border-radius:3px; font-size: 8pt; }"
-            "QPushButton:hover { background:#5A1A1A; }")
-        if not self._desc_edits:
-            rm_btn.setVisible(False)
-        rm_btn.clicked.connect(lambda: self._remove_desc_field(row, edit))
-        row.addWidget(edit)
-        row.addWidget(rm_btn)
-        self._desc_layout.addLayout(row)
-        self._desc_edits.append(edit)
-        self._add_desc_btn.setEnabled(len(self._desc_edits) < 5)
-        self.adjustSize()
-
-    def _remove_desc_field(self, row_layout, edit):
-        if len(self._desc_edits) <= 1:
-            return
-        self._desc_edits.remove(edit)
-        while row_layout.count():
-            item = row_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self._desc_layout.removeItem(row_layout)
-        for i, e in enumerate(self._desc_edits):
-            e.setPlaceholderText(f"Note {i + 1}…")
-        self._add_desc_btn.setEnabled(len(self._desc_edits) < 5)
-        self.adjustSize()
-
     @property
-    def selected_type(self) -> str:
-        return self.type_combo.currentText().strip()
-
-    @property
-    def selected_comment(self) -> str:
-        return self.comment_edit.text().strip()
-
-    @property
-    def selected_count(self) -> int:
-        return self.count_spin.value()
-
-    @property
-    def selected_description(self) -> str:
-        parts = [e.text().strip() for e in self._desc_edits if e.text().strip()]
-        return " | ".join(parts)
+    def count(self) -> int:
+        """Return existing count (not editable here)."""
+        return int(self._marker.get("tag_parts", {}).get(
+            "count", self._marker.get("count", 1)))
 
 
     # ---------------------------------------------------------------------------
@@ -855,7 +903,6 @@ class MarkerOverlay(QWidget):
     # ------------------------------------------------------------------
     def _show_marker_menu(self, marker: dict, global_pos) -> None:
         menu = QMenu(self)
-        info_act   = menu.addAction("ℹ️  View Info")
         edit_act   = menu.addAction("✏️  Edit…")
         menu.addSeparator()
         copy_act   = menu.addAction("📋  Copy  Ctrl+C")
@@ -878,9 +925,7 @@ class MarkerOverlay(QWidget):
         if not chosen:
             return
 
-        if chosen is info_act:
-            self._show_marker_info(marker)
-        elif chosen is edit_act:
+        if chosen is edit_act:
             self._open_edit_dialog(marker)
         elif chosen is copy_act:
             self._copy_marker(marker)
@@ -979,40 +1024,37 @@ class MarkerOverlay(QWidget):
                 self.update()
         
         elif marker.get("is_composition"):
-            # ── Composition marker dialog ──────────────────────────────
-            composition = db_load_signal_composition(marker["composition_id"])
-            if not composition:
-                return
-
-            dlg = CompositionPlacementDialog(
-                composition, parent=self,
-                tag_parts=marker.get("tag_parts", {}))
-            dlg.setWindowTitle(f"Edit {composition['title']}")
-
+            # ── Composition marker edit dialog ─────────────────────────
+            dlg = MarkerEditDialog(marker, [], parent=self)
             if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            if dlg.delete_requested:
+                self._push_undo_fn()
+                self._markers.remove(marker)
+                if self._selected_marker is marker:
+                    self._selected_marker = None
+                self.markers_changed.emit()
+                self.update()
                 return
 
             self._push_undo_fn()
-
             new_tag_parts = dlg.tag_parts
-            new_count     = dlg.count
+            # Preserve the existing count (not editable in this dialog)
+            new_tag_parts["count"] = dlg.count
 
-            # Rebuild display_text the same way _register_composition does
-            signal_counts = {}
-            for sig in composition.get("signals", []):
-                sig_type = sig.get("signal_type", "")
-                signal_counts[sig_type] = signal_counts.get(sig_type, 0) + new_count
-
-            parts = []
-            for sig_type in sorted(signal_counts.keys()):
-                sig_count = signal_counts[sig_type]
-                parts.append(f"{sig_count}{sig_type}")
-            display_text = " ".join(parts) if parts else composition["title"]
+            composition = dlg._composition
+            new_count   = dlg.count
+            if composition:
+                signal_counts = {}
+                for sig in composition.get("signals", []):
+                    sig_type = sig.get("signal_type", "")
+                    signal_counts[sig_type] = signal_counts.get(sig_type, 0) + new_count
+                parts = [f"{c}{t}" for t, c in sorted(signal_counts.items())]
+                display_text = " ".join(parts) if parts else composition["title"]
+                marker["type"] = display_text
 
             marker["tag_parts"] = new_tag_parts
             marker["count"]     = new_count
-            marker["type"]      = display_text  # update the display label
-
             self.markers_changed.emit()
             self.update()
         
@@ -5161,6 +5203,7 @@ class SignalCompositionConfigDialog(QDialog):
         self.comp_tree.itemSelectionChanged.connect(self._on_comp_selected)
         left_lay.addWidget(self.comp_tree, stretch=1)
 
+        # Typical buttons (new / delete)
         left_btn_lay = QHBoxLayout()
         new_comp_btn = QPushButton("➕ New")
         del_comp_btn = QPushButton("🗑 Delete")
@@ -5169,6 +5212,23 @@ class SignalCompositionConfigDialog(QDialog):
         left_btn_lay.addWidget(new_comp_btn)
         left_btn_lay.addWidget(del_comp_btn)
         left_lay.addLayout(left_btn_lay)
+
+        # Category management buttons
+        left_lay.addWidget(QLabel("<b>Categories:</b>"))
+        cat_btn_lay = QHBoxLayout()
+        add_cat_btn    = QPushButton("➕ Add")
+        rename_cat_btn = QPushButton("✏️ Rename")
+        del_cat_btn    = QPushButton("🗑 Delete")
+        add_cat_btn.setToolTip("Add a new category to the tree")
+        rename_cat_btn.setToolTip("Rename the selected category")
+        del_cat_btn.setToolTip("Delete empty category (or reassign its typicals to General)")
+        add_cat_btn.clicked.connect(self._add_category)
+        rename_cat_btn.clicked.connect(self._rename_category)
+        del_cat_btn.clicked.connect(self._delete_category)
+        cat_btn_lay.addWidget(add_cat_btn)
+        cat_btn_lay.addWidget(rename_cat_btn)
+        cat_btn_lay.addWidget(del_cat_btn)
+        left_lay.addLayout(cat_btn_lay)
         
         left_widget = QWidget()
         left_widget.setLayout(left_lay)
@@ -5208,55 +5268,68 @@ class SignalCompositionConfigDialog(QDialog):
         self._add_desc_btn.clicked.connect(lambda: self._add_desc_field())
         right_lay.addWidget(self._add_desc_btn)
 
-        # Control Module and Transmitter fields (mandatory)
-        # Each has 3 sub-fields: Name, Type, Description
-        cm_group = QGroupBox("Control Module")
-        cm_group.setStyleSheet(
-            "QGroupBox { border:1px solid #555; border-radius:4px; margin-top:6px; "
-            "color:#F0F0F0; font-weight:bold; }"
-            "QGroupBox::title { subcontrol-origin:margin; left:8px; padding:0 4px; }")
-        cm_form = QFormLayout(cm_group)
-        cm_form.setContentsMargins(8, 8, 8, 4)
-        cm_form.setSpacing(4)
-        self.cm_name_edit = QLineEdit("NA")
-        self.cm_name_edit.setPlaceholderText("Name or NA")
-        self.cm_name_edit.setToolTip("Control module name (mandatory – use NA if not applicable)")
-        self.cm_type_edit = QLineEdit("NA")
-        self.cm_type_edit.setPlaceholderText("Type or NA")
-        self.cm_type_edit.setToolTip("Control module type (optional)")
-        self.cm_desc_edit = QLineEdit("NA")
-        self.cm_desc_edit.setPlaceholderText("Description or NA")
-        self.cm_desc_edit.setToolTip("Control module description (optional)")
-        cm_form.addRow("Name*:", self.cm_name_edit)
-        cm_form.addRow("Type:", self.cm_type_edit)
-        cm_form.addRow("Description:", self.cm_desc_edit)
+        # Control Module and Transmitter as horizontal single-row tables
+        cm_tx_outer = QHBoxLayout()
 
-        tx_group = QGroupBox("Transmitter")
-        tx_group.setStyleSheet(
-            "QGroupBox { border:1px solid #555; border-radius:4px; margin-top:6px; "
-            "color:#F0F0F0; font-weight:bold; }"
-            "QGroupBox::title { subcontrol-origin:margin; left:8px; padding:0 4px; }")
-        tx_form = QFormLayout(tx_group)
-        tx_form.setContentsMargins(8, 8, 8, 4)
-        tx_form.setSpacing(4)
-        self.tx_name_edit = QLineEdit("NA")
-        self.tx_name_edit.setPlaceholderText("Name or NA")
-        self.tx_name_edit.setToolTip("Transmitter name (mandatory – use NA if not applicable)")
-        self.tx_type_edit = QLineEdit("NA")
-        self.tx_type_edit.setPlaceholderText("Type or NA")
-        self.tx_type_edit.setToolTip("Transmitter type (optional)")
-        self.tx_desc_edit = QLineEdit("NA")
-        self.tx_desc_edit.setPlaceholderText("Description or NA")
-        self.tx_desc_edit.setToolTip("Transmitter description (optional)")
-        tx_form.addRow("Name*:", self.tx_name_edit)
-        tx_form.addRow("Type:", self.tx_type_edit)
-        tx_form.addRow("Description:", self.tx_desc_edit)
+        # Control Module table
+        cm_widget = QWidget()
+        cm_vlay   = QVBoxLayout(cm_widget)
+        cm_vlay.setContentsMargins(0, 0, 0, 0)
+        cm_vlay.setSpacing(2)
+        cm_vlay.addWidget(QLabel("<b>Control Module:</b>"))
+        self.cm_table = QTableWidget(1, 3)
+        self.cm_table.setHorizontalHeaderLabels(["Name", "Type", "Description"])
+        self.cm_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Interactive)
+        self.cm_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Interactive)
+        self.cm_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch)
+        self.cm_table.verticalHeader().setVisible(False)
+        self.cm_table.setFixedHeight(56)
+        self.cm_table.setColumnWidth(0, 100)
+        self.cm_table.setColumnWidth(1, 90)
+        # Name cell — editable (plain text; read-only lock comes after load)
+        self.cm_name_edit = QTableWidgetItem("NA")
+        self.cm_table.setItem(0, 0, self.cm_name_edit)
+        self.cm_type_item = QTableWidgetItem("NA")
+        self.cm_table.setItem(0, 1, self.cm_type_item)
+        self.cm_desc_item = QTableWidgetItem("NA")
+        self.cm_table.setItem(0, 2, self.cm_desc_item)
+        cm_vlay.addWidget(self.cm_table)
+        cm_tx_outer.addWidget(cm_widget)
 
-        cm_tx_lay = QHBoxLayout()
-        cm_tx_lay.addWidget(cm_group)
-        cm_tx_lay.addSpacing(8)
-        cm_tx_lay.addWidget(tx_group)
-        right_lay.addLayout(cm_tx_lay)
+        # Transmitter table
+        tx_widget = QWidget()
+        tx_vlay   = QVBoxLayout(tx_widget)
+        tx_vlay.setContentsMargins(0, 0, 0, 0)
+        tx_vlay.setSpacing(2)
+        tx_vlay.addWidget(QLabel("<b>Transmitter:</b>"))
+        self.tx_table = QTableWidget(1, 3)
+        self.tx_table.setHorizontalHeaderLabels(["Name", "Type", "Description"])
+        self.tx_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Interactive)
+        self.tx_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Interactive)
+        self.tx_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch)
+        self.tx_table.verticalHeader().setVisible(False)
+        self.tx_table.setFixedHeight(56)
+        self.tx_table.setColumnWidth(0, 100)
+        self.tx_table.setColumnWidth(1, 90)
+        self.tx_name_item = QTableWidgetItem("NA")
+        self.tx_table.setItem(0, 0, self.tx_name_item)
+        self.tx_type_item = QTableWidgetItem("NA")
+        self.tx_table.setItem(0, 1, self.tx_type_item)
+        self.tx_desc_item = QTableWidgetItem("NA")
+        self.tx_table.setItem(0, 2, self.tx_desc_item)
+        tx_vlay.addWidget(self.tx_table)
+        cm_tx_outer.addWidget(tx_widget)
+
+        right_lay.addLayout(cm_tx_outer)
+
+        # Back-compat aliases so the rest of the code that reads .text() works
+        # We override the read helpers below instead.
 
         # Composition display
         right_lay.addWidget(QLabel("<b>Typical:</b>"))
@@ -5349,6 +5422,11 @@ class SignalCompositionConfigDialog(QDialog):
             cat = comp.get("category", "").strip() or "(General)"
             groups.setdefault(cat, []).append(comp)
 
+        # Also include pending (empty) categories created with "Add Category"
+        for pending in getattr(self, "_pending_new_categories", set()):
+            if pending not in groups:
+                groups[pending] = []
+
         # Sort: (General) first, then alphabetical
         sorted_cats = sorted(groups.keys(),
                              key=lambda c: ("" if c == "(General)" else c.lower()))
@@ -5358,7 +5436,9 @@ class SignalCompositionConfigDialog(QDialog):
             font = cat_item.font(0)
             font.setBold(True)
             cat_item.setFont(0, font)
-            cat_item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # not selectable
+            # Make category items selectable so rename/delete buttons work
+            cat_item.setFlags(
+                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
             for comp in groups[cat]:
                 child = QTreeWidgetItem(cat_item, [comp["title"]])
                 child.setData(0, Qt.ItemDataRole.UserRole, comp["id"])
@@ -5390,12 +5470,12 @@ class SignalCompositionConfigDialog(QDialog):
                 for dl in desc_lines[1:]:
                     self._add_desc_field(dl)
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
-            self.cm_name_edit.setText(comp.get("control_module", "NA") or "NA")
-            self.cm_type_edit.setText(comp.get("cm_type", "NA") or "NA")
-            self.cm_desc_edit.setText(comp.get("cm_description", "NA") or "NA")
-            self.tx_name_edit.setText(comp.get("transmitter", "NA") or "NA")
-            self.tx_type_edit.setText(comp.get("tx_type", "NA") or "NA")
-            self.tx_desc_edit.setText(comp.get("tx_description", "NA") or "NA")
+            self.cm_table.item(0, 0).setText(comp.get("control_module", "NA") or "NA")
+            self.cm_table.item(0, 1).setText(comp.get("cm_type", "NA") or "NA")
+            self.cm_table.item(0, 2).setText(comp.get("cm_description", "NA") or "NA")
+            self.tx_table.item(0, 0).setText(comp.get("transmitter", "NA") or "NA")
+            self.tx_table.item(0, 1).setText(comp.get("tx_type", "NA") or "NA")
+            self.tx_table.item(0, 2).setText(comp.get("tx_description", "NA") or "NA")
             # Reset to fixed columns then restore any extra columns saved with this composition
             self.signals_table.blockSignals(True)
             self.signals_table.setColumnCount(self._FIXED_COL_COUNT)
@@ -5414,12 +5494,12 @@ class SignalCompositionConfigDialog(QDialog):
         self.cat_edit.clear()
         self.title_edit.clear()
         self._reset_desc_fields()
-        self.cm_name_edit.setText("NA")
-        self.cm_type_edit.setText("NA")
-        self.cm_desc_edit.setText("NA")
-        self.tx_name_edit.setText("NA")
-        self.tx_type_edit.setText("NA")
-        self.tx_desc_edit.setText("NA")
+        self.cm_table.item(0, 0).setText("NA")
+        self.cm_table.item(0, 1).setText("NA")
+        self.cm_table.item(0, 2).setText("NA")
+        self.tx_table.item(0, 0).setText("NA")
+        self.tx_table.item(0, 1).setText("NA")
+        self.tx_table.item(0, 2).setText("NA")
         self.signals_table.blockSignals(True)
         self.signals_table.setColumnCount(self._FIXED_COL_COUNT)
         self.signals_table.setRowCount(0)
@@ -5568,6 +5648,103 @@ class SignalCompositionConfigDialog(QDialog):
             self._compositions = [c for c in self._compositions if c["id"] != comp_id]
             self._populate_tree()
             self._clear_form()
+
+    # ── Category management ───────────────────────────────────────────────────
+    def _selected_category(self) -> str | None:
+        """Return the category name of the currently selected tree item, or None."""
+        items = self.comp_tree.selectedItems()
+        if not items:
+            return None
+        item = items[0]
+        # If it's a leaf (typical), use its parent's text
+        if item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            parent = item.parent()
+            if parent:
+                name = parent.text(0)
+                return "" if name == "(General)" else name
+            return None
+        # It's a category header
+        name = item.text(0)
+        return "" if name == "(General)" else name
+
+    def _all_category_names(self) -> list[str]:
+        """Return sorted list of all category names currently in the tree."""
+        cats = set()
+        for comp in self._compositions:
+            cats.add(comp.get("category", "").strip())
+        return sorted(cats)
+
+    def _add_category(self):
+        name, ok = QInputDialog.getText(
+            self, "Add Category", "New category name:")
+        if not ok:
+            return
+        name = name.strip()
+        if not name:
+            QMessageBox.warning(self, "Invalid Name", "Category name cannot be empty.")
+            return
+        if name in self._all_category_names():
+            QMessageBox.information(self, "Exists",
+                                    f"Category '{name}' already exists.")
+            return
+        # Add a placeholder typical to anchor the category, OR just rebuild tree
+        # with no typicals — we store category as a text field on compositions.
+        # Easiest: just refresh; user can create a new typical and assign this cat.
+        # To show the empty category we need a sentinel — rebuild tree with it.
+        self._pending_new_categories = getattr(self, "_pending_new_categories", set())
+        self._pending_new_categories.add(name)
+        self._populate_tree()
+        # Pre-fill Category field so the next new typical gets this category
+        self.cat_edit.setText(name)
+
+    def _rename_category(self):
+        old_name = self._selected_category()
+        if old_name is None:
+            QMessageBox.warning(self, "No Selection",
+                                "Please click a category header to rename.")
+            return
+        display = old_name if old_name else "(General)"
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Category", f"Rename '{display}' to:",
+            text=old_name)
+        if not ok:
+            return
+        new_name = new_name.strip()
+        if not new_name or new_name == old_name:
+            return
+        # Update all compositions in this category
+        for comp in self._compositions:
+            if comp.get("category", "").strip() == old_name:
+                comp["category"] = new_name
+        # Update cat_edit if it currently shows the old name
+        if self.cat_edit.text().strip() == old_name:
+            self.cat_edit.setText(new_name)
+        self._populate_tree()
+
+    def _delete_category(self):
+        old_name = self._selected_category()
+        if old_name is None:
+            QMessageBox.warning(self, "No Selection",
+                                "Please click a category header to delete.")
+            return
+        display = old_name if old_name else "(General)"
+        members = [c for c in self._compositions
+                   if c.get("category", "").strip() == old_name]
+        if members:
+            ans = QMessageBox.question(
+                self, "Delete Category",
+                f"Category '{display}' has {len(members)} typical(s).\n"
+                "Move them to (General) and delete the category?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+            for comp in members:
+                comp["category"] = ""
+        else:
+            # Remove from pending set if present
+            pnc = getattr(self, "_pending_new_categories", set())
+            pnc.discard(old_name)
+        self._populate_tree()
 
     def _add_desc_field(self, text: str = "") -> None:
         """Add a description line field (max 5)."""
@@ -5928,12 +6105,12 @@ class SignalCompositionConfigDialog(QDialog):
         description = "\n".join(
             e.text().strip() for e in self._desc_fields if e.text().strip())
         comp_to_update["description"] = description
-        comp_to_update["control_module"] = self.cm_name_edit.text().strip() or "NA"
-        comp_to_update["cm_type"] = self.cm_type_edit.text().strip() or "NA"
-        comp_to_update["cm_description"] = self.cm_desc_edit.text().strip() or "NA"
-        comp_to_update["transmitter"] = self.tx_name_edit.text().strip() or "NA"
-        comp_to_update["tx_type"] = self.tx_type_edit.text().strip() or "NA"
-        comp_to_update["tx_description"] = self.tx_desc_edit.text().strip() or "NA"
+        comp_to_update["control_module"] = (self.cm_table.item(0, 0).text().strip() or "NA")
+        comp_to_update["cm_type"]        = (self.cm_table.item(0, 1).text().strip() or "NA")
+        comp_to_update["cm_description"] = (self.cm_table.item(0, 2).text().strip() or "NA")
+        comp_to_update["transmitter"]    = (self.tx_table.item(0, 0).text().strip() or "NA")
+        comp_to_update["tx_type"]        = (self.tx_table.item(0, 1).text().strip() or "NA")
+        comp_to_update["tx_description"] = (self.tx_table.item(0, 2).text().strip() or "NA")
         comp_to_update["extra_column_headers"] = extra_column_headers
         comp_to_update["signals"] = signals
 
