@@ -4057,6 +4057,14 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                 # Always produce prefix-sigtype-suffix; use "NA" where absent
                 tag_name = f"{prefix or 'NA'}-{sig_type}-{suffix or 'NA'}"
 
+                # Extra column values keyed as "extra_<header>"
+                extra_vals = signal.get("extra_column_values", [])
+                extra_headers = composition.get("extra_column_headers", [])
+                extra_dict = {
+                    f"extra_{h}": (extra_vals[i] if i < len(extra_vals) else "")
+                    for i, h in enumerate(extra_headers)
+                }
+
                 row = {
                     "name":      signal.get("signal_name", ""),
                     "type":      sig_type,
@@ -4066,6 +4074,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                     "comments":  comments,
                     "page":      page,
                     "file_name": file_nm,
+                    **extra_dict,
                 }
                 for _ in range(count):
                     expanded.append(row.copy())
@@ -4187,6 +4196,8 @@ def export_project_io_list(path: str, project_id: int,
 
     Columns: Name | Type | Description 1 | Description 2 (Signal Typical Details)
              | Tag Name | Comments | Technical Drawing Name | Page Number
+             | Project Name | Project Number | Project Description
+             | [extra signal columns from Signal Typical config...]
 
     All markers from all drawings are written sequentially into one "IO List"
     sheet.  No per-drawing sub-sheets are created.
@@ -4198,13 +4209,31 @@ def export_project_io_list(path: str, project_id: int,
     markers = db_load_project_markers(project_id, file_path)
     meta    = db_get_project_drawing_meta(project_id)
 
-    COLS = [
+    # Collect all extra column headers across all referenced compositions
+    extra_headers_seen: list[str] = []
+    comp_cache: dict[int, dict] = {}
+    for m in markers:
+        cid = m.get("composition_id")
+        if cid and cid not in comp_cache:
+            comp = db_load_signal_composition(cid)
+            if comp:
+                comp_cache[cid] = comp
+                for h in comp.get("extra_column_headers", []):
+                    if h not in extra_headers_seen:
+                        extra_headers_seen.append(h)
+
+    FIXED_COLS = [
         "Name", "Type", "Description 1",
         "Description 2 (Signal Typical Details)",
         "Tag Name", "Comments",
         "Technical Drawing Name", "Page Number",
+        "Project Name", "Project Number", "Project Description",
     ]
-    COL_WIDTHS = [24, 14, 36, 36, 22, 36, 34, 12]
+    FIXED_WIDTHS = [24, 14, 36, 36, 22, 36, 34, 12, 28, 16, 36]
+    EXTRA_WIDTH  = 22
+
+    COLS       = FIXED_COLS + extra_headers_seen
+    COL_WIDTHS = FIXED_WIDTHS + [EXTRA_WIDTH] * len(extra_headers_seen)
 
     # Styles
     hdr_font  = Font(name="Arial", bold=True, color="FFFFFF", size=10)
@@ -4228,7 +4257,7 @@ def export_project_io_list(path: str, project_id: int,
         fill = alt_fill if use_alt else PatternFill()
         drawing_name = os.path.splitext(r.get("file_name", ""))[0]
         page_number  = r.get("page", 0) + 1
-        values = [
+        fixed_values = [
             r.get("name", ""),
             r.get("type", ""),
             r.get("desc1", ""),
@@ -4237,7 +4266,12 @@ def export_project_io_list(path: str, project_id: int,
             r.get("comments", ""),
             drawing_name,
             page_number,
+            meta.get("name", ""),
+            meta.get("number", ""),
+            meta.get("description", ""),
         ]
+        extra_values = [r.get(f"extra_{h}", "") for h in extra_headers_seen]
+        values = fixed_values + extra_values
         for ci, val in enumerate(values, start=1):
             cell = ws.cell(row=row_idx, column=ci, value=val)
             cell.font      = row_font
@@ -4923,12 +4957,25 @@ class SignalCompositionTemplateDialog(QDialog):
         main_lay.addWidget(left_widget, stretch=0)
         main_lay.addWidget(right_widget, stretch=1)
         lay.addLayout(main_lay, stretch=1)
-        
+
+        # Export / Import buttons
+        io_lay = QHBoxLayout()
+        export_btn = QPushButton("📤 Export Templates to Excel…")
+        import_btn = QPushButton("📥 Import Templates from Excel…")
+        export_btn.setToolTip("Export all templates to an Excel file")
+        import_btn.setToolTip("Import templates from a previously exported Excel file")
+        export_btn.clicked.connect(self._export_templates_xlsx)
+        import_btn.clicked.connect(self._import_templates_xlsx)
+        io_lay.addWidget(export_btn)
+        io_lay.addWidget(import_btn)
+        io_lay.addStretch()
+        lay.addLayout(io_lay)
+
         # Buttons
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         bb.accepted.connect(self.accept)
         lay.addWidget(bb)
-        
+
         self.setLayout(lay)
     
     def _load_default_templates(self):
@@ -5088,6 +5135,111 @@ class SignalCompositionTemplateDialog(QDialog):
                 self._clear_form()
             self._refresh_template_list()
     
+    def _export_templates_xlsx(self):
+        """Export all templates to an Excel file."""
+        if not self._templates:
+            QMessageBox.information(self, "Nothing to Export",
+                                    "No templates to export.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Signal Typical Templates",
+            "signal_typical_templates.xlsx",
+            "Excel Files (*.xlsx)")
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Templates"
+            hdr_font  = Font(bold=True, color="FFFFFF")
+            hdr_fill  = PatternFill("solid", start_color="1F4E79")
+            hdr_align = Alignment(horizontal="center", vertical="center")
+            COLS = ["Template Title", "Template Description",
+                    "Signal Name", "Signal Type", "Signal Description"]
+            for ci, hdr in enumerate(COLS, 1):
+                cell = ws.cell(row=1, column=ci, value=hdr)
+                cell.font = hdr_font
+                cell.fill = hdr_fill
+                cell.alignment = hdr_align
+                ws.column_dimensions[
+                    __import__("openpyxl.utils", fromlist=["get_column_letter"]
+                               ).get_column_letter(ci)].width = 24
+            row = 2
+            for tmpl in self._templates.values():
+                for sig in tmpl.get("signals", []):
+                    ws.cell(row=row, column=1, value=tmpl.get("title", ""))
+                    ws.cell(row=row, column=2, value=tmpl.get("description", ""))
+                    ws.cell(row=row, column=3, value=sig.get("signal_name", ""))
+                    ws.cell(row=row, column=4, value=sig.get("signal_type", ""))
+                    ws.cell(row=row, column=5, value=sig.get("signal_description", ""))
+                    row += 1
+            wb.save(path)
+            QMessageBox.information(self, "Export Successful",
+                                    f"Templates exported to:\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", str(e))
+
+    def _import_templates_xlsx(self):
+        """Import templates from an Excel file."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Signal Typical Templates",
+            "", "Excel Files (*.xlsx)")
+        if not path:
+            return
+        try:
+            from openpyxl import load_workbook
+            wb = load_workbook(path, read_only=True, data_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(min_row=2, values_only=True))
+            if not rows:
+                QMessageBox.warning(self, "Empty File",
+                                    "No data rows found in the Excel file.")
+                return
+            imported: dict[str, dict] = {}
+            for row in rows:
+                if not row or len(row) < 4:
+                    continue
+                title    = str(row[0]).strip() if row[0] else ""
+                desc     = str(row[1]).strip() if row[1] else ""
+                sig_name = str(row[2]).strip() if row[2] else ""
+                sig_type = str(row[3]).strip() if row[3] else ""
+                sig_desc = str(row[4]).strip() if len(row) > 4 and row[4] else ""
+                if not title:
+                    continue
+                if title not in imported:
+                    imported[title] = {
+                        "id": None,
+                        "title": title,
+                        "description": desc,
+                        "signals": []
+                    }
+                if sig_name and sig_type:
+                    imported[title]["signals"].append({
+                        "signal_name": sig_name,
+                        "signal_type": sig_type,
+                        "signal_description": sig_desc,
+                    })
+            if not imported:
+                QMessageBox.warning(self, "No Templates",
+                                    "Could not find any valid template data.")
+                return
+            # Assign IDs and merge
+            next_id = max(self._templates.keys(), default=0) + 1
+            for tmpl in imported.values():
+                tmpl["id"] = next_id
+                self._templates[next_id] = tmpl
+                next_id += 1
+            self._refresh_template_list()
+            QMessageBox.information(
+                self, "Import Successful",
+                f"Imported {len(imported)} template(s) from:\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Import Failed", str(e))
+
     def get_templates(self) -> dict:
         """Return all templates."""
         return self._templates
@@ -5201,6 +5353,12 @@ class SignalCompositionConfigDialog(QDialog):
         self.comp_tree.setRootIsDecorated(True)
         self.comp_tree.setSortingEnabled(False)
         self.comp_tree.itemSelectionChanged.connect(self._on_comp_selected)
+        # Enable drag-and-drop between categories
+        self.comp_tree.setDragEnabled(True)
+        self.comp_tree.setAcceptDrops(True)
+        self.comp_tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.comp_tree.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.comp_tree.model().rowsInserted.connect(self._on_tree_rows_inserted)
         left_lay.addWidget(self.comp_tree, stretch=1)
 
         # Typical buttons (new / delete)
@@ -5746,6 +5904,27 @@ class SignalCompositionConfigDialog(QDialog):
             pnc.discard(old_name)
         self._populate_tree()
 
+    def _on_tree_rows_inserted(self, parent_index, first: int, last: int):
+        """
+        Called after an internal-move drag-drop inserts rows.
+        Walk through every category item and sync the composition's category
+        field to match the parent category the item now lives under.
+        """
+        root = self.comp_tree.invisibleRootItem()
+        for ci in range(root.childCount()):
+            cat_item = root.child(ci)
+            cat_label = cat_item.text(0)
+            cat_value = "" if cat_label == "(General)" else cat_label
+            for ti in range(cat_item.childCount()):
+                comp_item = cat_item.child(ti)
+                comp_id = comp_item.data(0, Qt.ItemDataRole.UserRole)
+                if comp_id is None:
+                    continue
+                for comp in self._compositions:
+                    if comp["id"] == comp_id:
+                        comp["category"] = cat_value
+                        break
+
     def _add_desc_field(self, text: str = "") -> None:
         """Add a description line field (max 5)."""
         if len(self._desc_fields) >= 5:
@@ -6178,6 +6357,8 @@ class ProjectMetadataDialog(QDialog):
 class ProjectPanel(QWidget):
     # Emitted when the user double-clicks a PDF node
     open_file_requested = Signal(str)
+    # Emitted when user picks "Export Project IO List" from project context menu
+    export_project_io_requested = Signal(int)  # project_id
 
     # Role used to store data on tree items
     _ROLE_KIND     = Qt.ItemDataRole.UserRole        # "project"|"file"|"unassigned_header"|"unassigned_file"
@@ -6702,10 +6883,13 @@ class ProjectPanel(QWidget):
             act_add_file   = menu.addAction("📄   Add PDF file…")
             act_add_folder = menu.addAction("📁   Add folder…")
             menu.addSeparator()
+            act_export_io  = menu.addAction("📊   Export Project IO List…")
+            menu.addSeparator()
             act_del = menu.addAction("🗑   Delete project")
             act_edit.triggered.connect(lambda: self._on_edit_project(pid))
             act_add_file.triggered.connect(lambda: self._on_add_file(pid))
             act_add_folder.triggered.connect(lambda: self._on_add_folder(pid))
+            act_export_io.triggered.connect(lambda: self.export_project_io_requested.emit(pid))
             act_del.triggered.connect(lambda: self._on_delete_project(pid))
 
         elif item.data(0, self._ROLE_KIND) == "file":
@@ -7237,20 +7421,23 @@ class PDFViewer(QMainWindow):
         edit_menu = mb.addMenu("&Edit")
         self.act_undo          = QAction("&Undo", self, shortcut="Ctrl+Z")
         self.act_redo          = QAction("&Redo", self, shortcut="Ctrl+Y")
+        # Use platform undo/redo icons with emoji fallback
+        _undo_icon = QApplication.style().standardIcon(
+            QStyle.StandardPixmap.SP_ArrowBack)
+        _redo_icon = QApplication.style().standardIcon(
+            QStyle.StandardPixmap.SP_ArrowForward)
+        self.act_undo.setIcon(_undo_icon)
+        self.act_redo.setIcon(_redo_icon)
         self.act_configure     = QAction("&Configure Signal Types…",  self, shortcut="Ctrl+,")
         self.act_configure_compositions = QAction(
             "🔧 Configure Signal &Typicals…", self, shortcut="Ctrl+Shift+,")
         self.act_config_export = QAction("Configure &Export Columns…", self)
-        self.act_export_signal_types = QAction("📤  Export Signal Types to Excel…", self)
-        self.act_import_signal_types = QAction("📥  Import Signal Types from XML/Excel…", self)
         self.act_undo.setEnabled(False)
         self.act_redo.setEnabled(False)
         edit_menu.addAction(self.act_undo)
         edit_menu.addAction(self.act_redo)
         edit_menu.addSeparator()
-        edit_menu.addAction(self.act_export_signal_types)
-        edit_menu.addAction(self.act_import_signal_types)
-        edit_menu.addAction(self.act_configure_compositions)  # ← New line
+        edit_menu.addAction(self.act_configure_compositions)
 
         # Preferences menu
         pref_menu = mb.addMenu("&Preferences")
@@ -7287,11 +7474,11 @@ class PDFViewer(QMainWindow):
         tb.addAction(self.act_save_pdf)
         tb.addSeparator()
 
-        # Group 3 — Edit
-        _tb_action("↩",  "Undo",       self.act_undo)
+        # Group 3 — Edit (icon mode for undo/redo so the icon shows)
+        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         tb.addAction(self.act_undo)
-        _tb_action("↪",  "Redo",       self.act_redo)
         tb.addAction(self.act_redo)
+        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         tb.addSeparator()
 
         # Group 4 — View / Navigation
@@ -7397,6 +7584,8 @@ class PDFViewer(QMainWindow):
             lambda v: self.act_show_projects.setChecked(v))
         self._project_panel.open_file_requested.connect(
             lambda p: self.open_pdf(p, _from_project=True))
+        self._project_panel.export_project_io_requested.connect(
+            self._export_project_io_by_id)
         self.act_save_fdf.triggered.connect(self.save_fdf)
         self.act_save_pdf.triggered.connect(self.save_pdf)
         self.act_exit.triggered.connect(self.close)
@@ -7409,8 +7598,6 @@ class PDFViewer(QMainWindow):
             lambda: self._go_to_page(self._current_tab().pdf_view.pageNavigator().currentPage() + 1))
         self.act_configure.triggered.connect(self.open_config)
         self.act_config_export.triggered.connect(self.open_export_config)
-        self.act_export_signal_types.triggered.connect(self.export_signal_types_xlsx)
-        self.act_import_signal_types.triggered.connect(self.import_signal_types_file)
         self.act_export_xlsx.triggered.connect(self.export_xlsx)
         self.act_export_project_io.triggered.connect(self.export_project_io_list)
         self.act_link_session.triggered.connect(self.open_manual_link)
@@ -8386,7 +8573,39 @@ class PDFViewer(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
 
-    # ── FDF export ────────────────────────────────────────────────────────
+    def _export_project_io_by_id(self, project_id: int):
+        """Export IO list for a specific project_id (called from project panel context menu)."""
+        projects = db_load_projects()
+        project = next((p for p in projects if p["id"] == project_id), None)
+        if not project:
+            QMessageBox.warning(self, "Project Not Found",
+                                "Could not find the selected project.")
+            return
+        safe_name = "".join(
+            c for c in project["name"] if c.isalnum() or c in " _-")
+        default_name = f"{safe_name}_IO_List.xlsx"
+        out_path = os.path.join(os.path.dirname(DB_PATH), default_name)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export IO List", out_path, "Excel Files (*.xlsx)")
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            export_project_io_list(path, project_id, None)
+            markers = db_load_project_markers(project_id, None)
+            n = len(markers)
+            drawings = len(set(m["file_name"] for m in markers))
+            self.statusBar().showMessage(
+                f"IO List exported: {path}  ({n} marker(s), {drawings} drawing(s))")
+            QMessageBox.information(
+                self, "Export complete",
+                f"IO List exported for <b>{project['name']}</b>.<br>"
+                f"{n} IO marker(s) across {drawings} drawing(s).<br><br>"
+                f"{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export failed", str(e))
     def save_fdf(self):
         ts = self._current_tab()
         if not ts or not ts.io_list:
