@@ -5594,12 +5594,20 @@ class SignalCompositionConfigDialog(QDialog):
             font = cat_item.font(0)
             font.setBold(True)
             cat_item.setFont(0, font)
-            # Make category items selectable so rename/delete buttons work
+            # Make category items selectable (for rename/delete) and droppable
+            # so that typicals can be dragged onto them.
             cat_item.setFlags(
-                Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                Qt.ItemFlag.ItemIsEnabled
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsDropEnabled)
             for comp in groups[cat]:
                 child = QTreeWidgetItem(cat_item, [comp["title"]])
                 child.setData(0, Qt.ItemDataRole.UserRole, comp["id"])
+                # Leaf items must be draggable so they can be moved between categories.
+                child.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled
+                    | Qt.ItemFlag.ItemIsSelectable
+                    | Qt.ItemFlag.ItemIsDragEnabled)
             cat_item.setExpanded(True)
     
     def _on_comp_selected(self):
