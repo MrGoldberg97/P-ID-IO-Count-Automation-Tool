@@ -4721,18 +4721,25 @@ class CompositionPlacementDialog(QDialog):
     """
     Dialog shown when placing a Signal Typical on the PDF.
     Displays the full typical configuration.
+
     Read-only: title, Control Module Name, Transmitter Name,
-               Signal Name and Type columns.
-    Editable:  count, description, CM type/desc, TX type/desc,
-               Signal Description, Prefix, Suffix columns.
+               Signal Name, Signal Type, Signal Description,
+               Count, and Resulting Signal columns.
+    Editable:  description, CM type/desc, TX type/desc,
+               Prefix, Suffix, and any extra columns.
     """
 
     _RO_BG = "#2A2A2A"   # grey background for read-only cells
 
+    # Fixed columns that mirror the Signal Typical configuration dialog.
+    # Columns: Signal Name | Signal Type | Signal Description | Count |
+    #          Prefix | Suffix | Resulting Signal | [extra columns…]
+    _FIXED_COL_COUNT = 7
+
     def __init__(self, composition: dict, parent=None, tag_parts: dict = None):
         super().__init__(parent)
         self.setWindowTitle(f"Place {composition['title']}")
-        self.setMinimumSize(680, 540)
+        self.setMinimumSize(750, 560)
         self._composition = composition
         tp = tag_parts or {}
 
@@ -4749,19 +4756,6 @@ class CompositionPlacementDialog(QDialog):
         title_lbl.setStyleSheet("font-size: 11pt;")
         lay.addWidget(title_lbl)
 
-        # ── Count ─────────────────────────────────────────────────────────
-        count_row = QHBoxLayout()
-        count_row.addWidget(QLabel("<b>Count (multiplier):</b>"))
-        self.count_spin = QSpinBox()
-        self.count_spin.setMinimum(1)
-        self.count_spin.setMaximum(999)
-        self.count_spin.setValue(int(tp.get("count", 1) or 1))
-        self.count_spin.setMaximumWidth(80)
-        count_row.addWidget(self.count_spin)
-        count_row.addWidget(QLabel("(all signals are multiplied by this value)"))
-        count_row.addStretch()
-        lay.addLayout(count_row)
-
         # ── Description ───────────────────────────────────────────────────
         desc_row = QHBoxLayout()
         desc_row.addWidget(QLabel("<b>Description:</b>"))
@@ -4769,7 +4763,7 @@ class CompositionPlacementDialog(QDialog):
         desc_row.addWidget(self.desc_edit)
         lay.addLayout(desc_row)
 
-        # ── Control Module + Transmitter ──────────────────────────────────
+        # ── Control Module + Transmitter (side-by-side) ───────────────────
         cm_tx_lay = QHBoxLayout()
 
         cm_group = QGroupBox("Control Module")
@@ -4807,21 +4801,31 @@ class CompositionPlacementDialog(QDialog):
         cm_tx_lay.addWidget(tx_group)
         lay.addLayout(cm_tx_lay)
 
-        # ── Signals table ─────────────────────────────────────────────────
+        # ── Signals table (mirrors Signal Typical configuration columns) ──
+        extra_headers = composition.get("extra_column_headers", [])
+        fixed_labels = [
+            "Signal Name", "Signal Type", "Signal Description",
+            "Count", "Prefix", "Suffix", "Resulting Signal",
+        ]
+        all_headers = fixed_labels + extra_headers
         lay.addWidget(QLabel("<b>Signals:</b>"))
-        self.signals_table = QTableWidget(0, 5)
-        self.signals_table.setHorizontalHeaderLabels(
-            ["Signal Name", "Type", "Description", "Prefix", "Suffix"])
+        self.signals_table = QTableWidget(0, len(all_headers))
+        self.signals_table.setHorizontalHeaderLabels(all_headers)
         hdr = self.signals_table.horizontalHeader()
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
         hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        for ci in range(self._FIXED_COL_COUNT, len(all_headers)):
+            hdr.setSectionResizeMode(ci, QHeaderView.ResizeMode.Interactive)
         self.signals_table.setColumnWidth(0, 110)
         self.signals_table.setColumnWidth(1, 90)
-        self.signals_table.setColumnWidth(3, 70)
-        self.signals_table.setColumnWidth(4, 70)
+        self.signals_table.setColumnWidth(3, 60)
+        self.signals_table.setColumnWidth(4, 65)
+        self.signals_table.setColumnWidth(5, 65)
         self.signals_table.verticalHeader().setVisible(False)
         self.signals_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows)
@@ -4836,21 +4840,43 @@ class CompositionPlacementDialog(QDialog):
             r = self.signals_table.rowCount()
             self.signals_table.insertRow(r)
 
-            # Read-only: Signal Name, Type
-            for ci, val in enumerate([sig.get("signal_name", ""),
-                                       sig.get("signal_type", "")]):
+            sig_type = sig.get("signal_type", "")
+            count    = int(sig.get("count", 1) or 1)
+
+            # Read-only columns: Signal Name (0), Signal Type (1),
+            #                    Signal Description (2), Count (3),
+            #                    Resulting Signal (6)
+            ro_values = [
+                sig.get("signal_name", ""),        # 0
+                sig_type,                           # 1
+                sig.get("signal_description", ""),  # 2
+                str(count),                         # 3
+            ]
+            for ci, val in enumerate(ro_values):
                 item = QTableWidgetItem(val)
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 item.setBackground(QBrush(QColor(self._RO_BG)))
                 self.signals_table.setItem(r, ci, item)
 
-            # Editable: Description, Prefix, Suffix
-            self.signals_table.setItem(r, 2, QTableWidgetItem(
-                ov.get("signal_description", sig.get("signal_description", ""))))
-            self.signals_table.setItem(r, 3, QTableWidgetItem(
-                ov.get("prefix", sig.get("prefix", "NA"))))
+            # Editable: Prefix (4), Suffix (5)
             self.signals_table.setItem(r, 4, QTableWidgetItem(
+                ov.get("prefix", sig.get("prefix", "NA"))))
+            self.signals_table.setItem(r, 5, QTableWidgetItem(
                 ov.get("suffix", sig.get("suffix", "NA"))))
+
+            # Read-only: Resulting Signal (6) — computed from type × count
+            resulting = sig_type if count <= 1 else f"{count}{sig_type}"
+            res_item = QTableWidgetItem(resulting)
+            res_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            res_item.setBackground(QBrush(QColor(self._RO_BG)))
+            self.signals_table.setItem(r, 6, res_item)
+
+            # Editable extra columns (7+)
+            ov_extras = ov.get("extra_column_values",
+                               sig.get("extra_column_values", []))
+            for ec in range(len(extra_headers)):
+                val = ov_extras[ec] if ec < len(ov_extras) else ""
+                self.signals_table.setItem(r, self._FIXED_COL_COUNT + ec, QTableWidgetItem(val))
 
         lay.addWidget(self.signals_table, stretch=1)
 
@@ -4866,15 +4892,20 @@ class CompositionPlacementDialog(QDialog):
     @property
     def tag_parts(self) -> dict:
         """Return all placement overrides."""
+        extra_headers = self._composition.get("extra_column_headers", [])
         overrides = []
         for r in range(self.signals_table.rowCount()):
+            ev = [
+                (self.signals_table.item(r, self._FIXED_COL_COUNT + ec) or QTableWidgetItem()).text()
+                for ec in range(len(extra_headers))
+            ]
             overrides.append({
                 "signal_description": (self.signals_table.item(r, 2) or QTableWidgetItem()).text(),
-                "prefix":             (self.signals_table.item(r, 3) or QTableWidgetItem()).text(),
-                "suffix":             (self.signals_table.item(r, 4) or QTableWidgetItem()).text(),
+                "prefix":             (self.signals_table.item(r, 4) or QTableWidgetItem()).text(),
+                "suffix":             (self.signals_table.item(r, 5) or QTableWidgetItem()).text(),
+                "extra_column_values": ev,
             })
         return {
-            "count":          self.count_spin.value(),
             "description":    self.desc_edit.text().strip(),
             "cm_type":        self.cm_type_edit.text().strip(),
             "cm_description": self.cm_desc_edit.text().strip(),
@@ -4882,11 +4913,6 @@ class CompositionPlacementDialog(QDialog):
             "tx_description": self.tx_desc_edit.text().strip(),
             "signal_overrides": overrides,
         }
-
-    @property
-    def count(self) -> int:
-        """Return the count multiplier."""
-        return self.count_spin.value()
             
 # ---------------------------------------------------------------------------
 # SignalCompositionTemplateDialog — manage templates
