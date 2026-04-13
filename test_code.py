@@ -5035,7 +5035,8 @@ class SignalCompositionTemplateDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Signal Typical Templates")
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(1100, 720)
+        self.resize(1200, 780)
         self._templates = {}
         self._current_template_id = None
         self._build_ui()
@@ -5045,51 +5046,68 @@ class SignalCompositionTemplateDialog(QDialog):
         lay = QVBoxLayout()
         lay.setContentsMargins(16, 14, 16, 10)
         lay.setSpacing(10)
-        
+
         lay.addWidget(QLabel(
-            "<b>Signal Typical Templates</b><br>"
-            "<span style='color:#AAAAAA;font-size:8pt;'>"
-            "Create and manage reusable signal typical templates.</span>"))
-        
-        # Left panel: template list
+            "<b style='font-size:11pt;'>Signal Typical Templates</b><br>"
+            "<span style='color:#AAAAAA;font-size:9pt;'>"
+            "Create and manage reusable signal typical templates. "
+            "Use Export / Import to share templates across machines.</span>"))
+
+        # ── Left panel: template list ──────────────────────────────────────
         left_lay = QVBoxLayout()
-        left_lay.addWidget(QLabel("<b>Templates:</b>"))
-        
+        lbl_templates = QLabel("<b>Templates</b>")
+        lbl_templates.setStyleSheet("font-size:10pt;")
+        left_lay.addWidget(lbl_templates)
+
         self.template_list = QListWidget()
+        self.template_list.setMinimumWidth(220)
         self.template_list.itemSelectionChanged.connect(self._on_template_selected)
         left_lay.addWidget(self.template_list, stretch=1)
-        
+
         left_btn_lay = QHBoxLayout()
         new_btn = QPushButton("➕ New")
         del_btn = QPushButton("🗑 Delete")
+        new_btn.setMinimumHeight(28)
+        del_btn.setMinimumHeight(28)
         new_btn.clicked.connect(self._new_template)
         del_btn.clicked.connect(self._delete_template)
         left_btn_lay.addWidget(new_btn)
         left_btn_lay.addWidget(del_btn)
         left_lay.addLayout(left_btn_lay)
-        
+
         left_widget = QWidget()
         left_widget.setLayout(left_lay)
-        left_widget.setMaximumWidth(280)
-        
-        # Right panel: template editor
+
+        # ── Right panel: template editor ───────────────────────────────────
         right_lay = QVBoxLayout()
-        
-        # Title and description
-        right_lay.addWidget(QLabel("<b>Template Details:</b>"))
-        
+        right_lay.setSpacing(8)
+
+        lbl_details = QLabel("<b>Template Details</b>")
+        lbl_details.setStyleSheet("font-size:10pt;")
+        right_lay.addWidget(lbl_details)
+
+        # Form: name + description
+        form_lay = QFormLayout()
+        form_lay.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form_lay.setHorizontalSpacing(10)
+        form_lay.setVerticalSpacing(6)
+
         self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("Template name")
-        right_lay.addWidget(self.title_edit)
-        
+        self.title_edit.setPlaceholderText("Enter template name…")
+        self.title_edit.setMinimumHeight(28)
+        form_lay.addRow("<b>Name:</b>", self.title_edit)
+
         self.desc_edit = QPlainTextEdit()
-        self.desc_edit.setPlaceholderText("Template description")
-        self.desc_edit.setMaximumHeight(60)
-        right_lay.addWidget(self.desc_edit)
-        
-        # Signals table
-        right_lay.addWidget(QLabel("<b>Signals:</b>"))
-        
+        self.desc_edit.setPlaceholderText("Enter template description…")
+        self.desc_edit.setFixedHeight(72)
+        form_lay.addRow("<b>Description:</b>", self.desc_edit)
+
+        right_lay.addLayout(form_lay)
+
+        lbl_signals = QLabel("<b>Signals</b>")
+        lbl_signals.setStyleSheet("font-size:10pt;")
+        right_lay.addWidget(lbl_signals)
+
         self.signals_table = QTableWidget(0, 3)
         self.signals_table.setHorizontalHeaderLabels(
             ["Signal Name", "Signal Type", "Description"])
@@ -5104,45 +5122,60 @@ class SignalCompositionTemplateDialog(QDialog):
         self.signals_table.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection)
         self.signals_table.verticalHeader().setVisible(False)
+        self.signals_table.setMinimumHeight(200)
         right_lay.addWidget(self.signals_table, stretch=1)
-        
-        # Signal buttons
+
+        # Signal row buttons
         sig_btn_lay = QHBoxLayout()
         add_sig_btn = QPushButton("➕ Add Signal")
         rem_sig_btn = QPushButton("🗑 Remove Signal")
+        add_sig_btn.setMinimumHeight(28)
+        rem_sig_btn.setMinimumHeight(28)
         add_sig_btn.clicked.connect(self._add_signal_row)
         rem_sig_btn.clicked.connect(self._remove_signal_row)
         sig_btn_lay.addWidget(add_sig_btn)
         sig_btn_lay.addWidget(rem_sig_btn)
         sig_btn_lay.addStretch()
         right_lay.addLayout(sig_btn_lay)
-        
-        # Save/Clear buttons
+
+        # Save / Clear buttons
         save_btn_lay = QHBoxLayout()
         save_btn = QPushButton("💾 Save Template")
         clear_btn = QPushButton("🔄 Clear")
+        save_btn.setMinimumHeight(30)
+        clear_btn.setMinimumHeight(30)
         save_btn.clicked.connect(self._save_template)
         clear_btn.clicked.connect(self._clear_form)
         save_btn_lay.addWidget(save_btn)
         save_btn_lay.addWidget(clear_btn)
         save_btn_lay.addStretch()
         right_lay.addLayout(save_btn_lay)
-        
+
         right_widget = QWidget()
         right_widget.setLayout(right_lay)
-        
-        # Main split
-        main_lay = QHBoxLayout()
-        main_lay.addWidget(left_widget, stretch=0)
-        main_lay.addWidget(right_widget, stretch=1)
-        lay.addLayout(main_lay, stretch=1)
 
-        # Export / Import buttons
+        # ── Splitter (resizable left / right) ─────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([280, 820])
+        lay.addWidget(splitter, stretch=1)
+
+        # ── Export / Import row ────────────────────────────────────────────
         io_lay = QHBoxLayout()
-        export_btn = QPushButton("📤 Export Templates to Excel…")
-        import_btn = QPushButton("📥 Import Templates from Excel…")
-        export_btn.setToolTip("Export all templates to an Excel file")
-        import_btn.setToolTip("Import templates from a previously exported Excel file")
+        export_btn = QPushButton("📤  Export Templates to Excel…")
+        import_btn = QPushButton("📥  Import Templates from Excel…")
+        export_btn.setMinimumHeight(30)
+        import_btn.setMinimumHeight(30)
+        export_btn.setToolTip(
+            "Export all templates to an Excel file.\n"
+            "Each row represents one signal; template title and description\n"
+            "are repeated across all rows belonging to the same template.")
+        import_btn.setToolTip(
+            "Import templates from a previously exported (or manually filled) Excel file.\n"
+            "Columns: Template Title | Template Description | Signal Name | Signal Type | Signal Description")
         export_btn.clicked.connect(self._export_templates_xlsx)
         import_btn.clicked.connect(self._import_templates_xlsx)
         io_lay.addWidget(export_btn)
@@ -5150,7 +5183,7 @@ class SignalCompositionTemplateDialog(QDialog):
         io_lay.addStretch()
         lay.addLayout(io_lay)
 
-        # Buttons
+        # ── Dialog button box ──────────────────────────────────────────────
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         bb.accepted.connect(self.accept)
         lay.addWidget(bb)
@@ -5328,7 +5361,20 @@ class SignalCompositionTemplateDialog(QDialog):
             self._refresh_template_list()
     
     def _export_templates_xlsx(self):
-        """Export all templates to an Excel file."""
+        """Export all templates to an Excel file.
+
+        Format: one row per signal.  Template Title and Template Description
+        are repeated on every row that belongs to the same template so that
+        the file can be round-tripped through the importer without any
+        manual editing.
+
+        Columns (A-E):
+            A  Template Title
+            B  Template Description
+            C  Signal Name
+            D  Signal Type
+            E  Signal Description
+        """
         if not self._templates:
             QMessageBox.information(self, "Nothing to Export",
                                     "No templates to export.")
@@ -5344,39 +5390,70 @@ class SignalCompositionTemplateDialog(QDialog):
         try:
             from openpyxl import Workbook
             from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.utils import get_column_letter
             wb = Workbook()
             ws = wb.active
             ws.title = "Templates"
+            ws.freeze_panes = "A2"
             hdr_font  = Font(bold=True, color="FFFFFF")
             hdr_fill  = PatternFill("solid", start_color="1F4E79")
             hdr_align = Alignment(horizontal="center", vertical="center")
-            COLS = ["Template Title", "Template Description",
-                    "Signal Name", "Signal Type", "Signal Description"]
-            for ci, hdr in enumerate(COLS, 1):
+            COLS = [
+                ("Template Title",       30),
+                ("Template Description", 36),
+                ("Signal Name",          20),
+                ("Signal Type",          18),
+                ("Signal Description",   36),
+            ]
+            for ci, (hdr, width) in enumerate(COLS, 1):
                 cell = ws.cell(row=1, column=ci, value=hdr)
-                cell.font = hdr_font
-                cell.fill = hdr_fill
+                cell.font  = hdr_font
+                cell.fill  = hdr_fill
                 cell.alignment = hdr_align
-                ws.column_dimensions[
-                    __import__("openpyxl.utils", fromlist=["get_column_letter"]
-                               ).get_column_letter(ci)].width = 24
+                ws.column_dimensions[get_column_letter(ci)].width = width
             row = 2
             for tmpl in self._templates.values():
-                for sig in tmpl.get("signals", []):
+                signals = tmpl.get("signals", [])
+                if not signals:
+                    # Export a placeholder row even when a template has no
+                    # signals so the template name / description is preserved.
                     ws.cell(row=row, column=1, value=tmpl.get("title", ""))
                     ws.cell(row=row, column=2, value=tmpl.get("description", ""))
-                    ws.cell(row=row, column=3, value=sig.get("signal_name", ""))
-                    ws.cell(row=row, column=4, value=sig.get("signal_type", ""))
-                    ws.cell(row=row, column=5, value=sig.get("signal_description", ""))
+                    ws.cell(row=row, column=3, value="")
+                    ws.cell(row=row, column=4, value="")
+                    ws.cell(row=row, column=5, value="")
                     row += 1
+                else:
+                    for sig in signals:
+                        ws.cell(row=row, column=1, value=tmpl.get("title", ""))
+                        ws.cell(row=row, column=2, value=tmpl.get("description", ""))
+                        ws.cell(row=row, column=3, value=sig.get("signal_name", ""))
+                        ws.cell(row=row, column=4, value=sig.get("signal_type", ""))
+                        ws.cell(row=row, column=5, value=sig.get("signal_description", ""))
+                        row += 1
             wb.save(path)
-            QMessageBox.information(self, "Export Successful",
-                                    f"Templates exported to:\n{path}")
+            QMessageBox.information(
+                self, "Export Successful",
+                f"Exported {len(self._templates)} template(s) to:\n{path}\n\n"
+                "Note: each row represents one signal. Template Title and\n"
+                "Description are repeated for every signal in that template.")
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
 
     def _import_templates_xlsx(self):
-        """Import templates from an Excel file with duplicate-title handling."""
+        """Import templates from an Excel file with duplicate-title handling.
+
+        Expected column order (row 1 = header, rows 2+ = data):
+            A  Template Title       (required)
+            B  Template Description (optional)
+            C  Signal Name          (optional – template may have no signals)
+            D  Signal Type          (required when Signal Name is present)
+            E  Signal Description   (optional)
+
+        Multiple rows with the same Template Title are grouped into a single
+        template; Title and Description are taken from the first row of each
+        group (subsequent rows may repeat the same values or leave them blank).
+        """
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Signal Typical Templates",
             "", "Excel Files (*.xlsx)")
@@ -5392,24 +5469,29 @@ class SignalCompositionTemplateDialog(QDialog):
                                     "No data rows found in the Excel file.")
                 return
 
-            # Parse rows into a dict keyed by template title
+            # ── Parse rows → dict keyed by title ──────────────────────────
             imported: dict[str, dict] = {}
             for row in rows:
-                if not row or len(row) < 4:
+                if not row:
                     continue
-                title    = str(row[0]).strip() if row[0] else ""
-                desc     = str(row[1]).strip() if row[1] else ""
-                sig_name = str(row[2]).strip() if row[2] else ""
-                sig_type = str(row[3]).strip() if row[3] else ""
-                sig_desc = str(row[4]).strip() if len(row) > 4 and row[4] else ""
+                # Pad to 5 columns
+                padded = list(row) + [None] * 5
+                title    = str(padded[0]).strip() if padded[0] is not None else ""
+                desc     = str(padded[1]).strip() if padded[1] is not None else ""
+                sig_name = str(padded[2]).strip() if padded[2] is not None else ""
+                sig_type = str(padded[3]).strip() if padded[3] is not None else ""
+                sig_desc = str(padded[4]).strip() if padded[4] is not None else ""
+
                 if not title:
-                    continue
+                    continue  # skip blank-title rows
+
                 if title not in imported:
                     imported[title] = {
                         "title":       title,
                         "description": desc,
                         "signals":     [],
                     }
+                # Only add a signal row when both name and type are present
                 if sig_name and sig_type:
                     imported[title]["signals"].append({
                         "signal_name":        sig_name,
@@ -5419,47 +5501,94 @@ class SignalCompositionTemplateDialog(QDialog):
 
             if not imported:
                 QMessageBox.warning(self, "No Templates",
-                                    "Could not find any valid template data.")
+                                    "Could not find any valid template data.\n\n"
+                                    "Make sure the file has the correct column order:\n"
+                                    "A: Template Title  B: Template Description\n"
+                                    "C: Signal Name     D: Signal Type  E: Signal Description")
                 return
 
-            # Build a title → existing template mapping for conflict detection
+            # ── Detect conflicts ───────────────────────────────────────────
             existing_by_title: dict[str, dict] = {
                 t["title"]: t for t in self._templates.values()
             }
+            conflicts = [t for t in imported if t in existing_by_title]
 
+            # ── Ask once for bulk strategy when there are conflicts ────────
+            # Options:  "Overwrite All"  |  "Add All as New"  |  "Skip All"
+            #           |  "Decide per template"
+            bulk_action = None   # None means: decide per template
+            if conflicts:
+                mb = QMessageBox(self)
+                mb.setWindowTitle("Duplicate Templates Detected")
+                mb.setText(
+                    f"<b>{len(conflicts)}</b> template(s) in the file already exist "
+                    f"in the system:<br><br>"
+                    + "<br>".join(f"• {c}" for c in conflicts[:10])
+                    + ("<br>…" if len(conflicts) > 10 else "")
+                    + "<br><br>How would you like to handle <b>all</b> conflicts?")
+                ow_all_btn  = mb.addButton(
+                    "Overwrite All",     QMessageBox.ButtonRole.AcceptRole)
+                new_all_btn = mb.addButton(
+                    "Add All as New",    QMessageBox.ButtonRole.YesRole)
+                skip_all_btn = mb.addButton(
+                    "Skip All",          QMessageBox.ButtonRole.NoRole)
+                per_btn     = mb.addButton(
+                    "Decide per Template", QMessageBox.ButtonRole.ResetRole)
+                mb.setDefaultButton(per_btn)
+                mb.exec()
+                clicked = mb.clickedButton()
+                if clicked == ow_all_btn:
+                    bulk_action = "overwrite"
+                elif clicked == new_all_btn:
+                    bulk_action = "add_new"
+                elif clicked == skip_all_btn:
+                    bulk_action = "skip"
+                else:
+                    bulk_action = None  # decide per template
+
+            # ── Process each imported template ─────────────────────────────
             added = 0
             overwritten = 0
             skipped = 0
 
             for tmpl in imported.values():
-                title = tmpl["title"]
-                signals = tmpl["signals"]
+                title       = tmpl["title"]
+                signals     = tmpl["signals"]
                 description = tmpl["description"]
 
                 if title in existing_by_title:
-                    # Duplicate title — ask the user what to do
-                    mb = QMessageBox(self)
-                    mb.setWindowTitle("Duplicate Template")
-                    mb.setText(
-                        f"A template named <b>{title}</b> already exists.<br><br>"
-                        "What would you like to do?")
-                    overwrite_btn = mb.addButton(
-                        "Overwrite existing", QMessageBox.ButtonRole.AcceptRole)
-                    new_btn = mb.addButton(
-                        "Add as new template", QMessageBox.ButtonRole.YesRole)
-                    skip_btn = mb.addButton(
-                        "Skip", QMessageBox.ButtonRole.RejectRole)
-                    mb.setDefaultButton(skip_btn)
-                    mb.exec()
-                    clicked = mb.clickedButton()
+                    action = bulk_action
+                    if action is None:
+                        # Per-template dialog
+                        mb2 = QMessageBox(self)
+                        mb2.setWindowTitle("Duplicate Template")
+                        mb2.setText(
+                            f"A template named <b>{title}</b> already exists.<br><br>"
+                            "What would you like to do?")
+                        ow_btn   = mb2.addButton(
+                            "Overwrite existing",  QMessageBox.ButtonRole.AcceptRole)
+                        new_btn2 = mb2.addButton(
+                            "Add as new template", QMessageBox.ButtonRole.YesRole)
+                        sk_btn   = mb2.addButton(
+                            "Skip",                QMessageBox.ButtonRole.RejectRole)
+                        mb2.setDefaultButton(sk_btn)
+                        mb2.exec()
+                        c2 = mb2.clickedButton()
+                        if c2 == ow_btn:
+                            action = "overwrite"
+                        elif c2 == new_btn2:
+                            action = "add_new"
+                        else:
+                            action = "skip"
 
-                    if clicked == overwrite_btn:
+                    if action == "overwrite":
                         existing = existing_by_title[title]
-                        db_update_template(existing["id"], title, description, signals)
+                        db_update_template(
+                            existing["id"], title, description, signals)
                         existing["description"] = description
                         existing["signals"]     = signals
                         overwritten += 1
-                    elif clicked == new_btn:
+                    elif action == "add_new":
                         new_id = db_save_new_template(title, description, signals)
                         self._templates[new_id] = {
                             "id":          new_id,
@@ -5471,7 +5600,7 @@ class SignalCompositionTemplateDialog(QDialog):
                     else:
                         skipped += 1
                 else:
-                    # New title — add directly
+                    # No conflict — insert directly
                     new_id = db_save_new_template(title, description, signals)
                     self._templates[new_id] = {
                         "id":          new_id,
@@ -5491,7 +5620,8 @@ class SignalCompositionTemplateDialog(QDialog):
                 parts.append(f"{skipped} skipped")
             QMessageBox.information(
                 self, "Import Complete",
-                f"Import finished: {', '.join(parts)}.\nSource: {path}")
+                f"Import finished: {', '.join(parts) or 'nothing changed'}.\n"
+                f"Source: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Import Failed", str(e))
 
