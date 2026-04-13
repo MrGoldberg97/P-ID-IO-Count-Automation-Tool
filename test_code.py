@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QTimer
 from PySide6.QtGui import (QPainter, QColor, QPen, QPainterPath, QBrush,
-                            QAction, QKeySequence, QActionGroup, QFont)
+                            QAction, QKeySequence, QActionGroup, QFont, QPalette)
 from PySide6.QtPdf import QPdfDocument
 from PySide6.QtPdfWidgets import QPdfView
 
