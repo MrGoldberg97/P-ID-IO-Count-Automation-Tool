@@ -3267,6 +3267,7 @@ def export_signal_types_to_xlsx(path: str, tree: list[dict]) -> None:
     ws2.column_dimensions["A"].width = 80
 
     wb.save(path)
+    wb.close()
 
 
 # ---------------------------------------------------------------------------
@@ -4337,6 +4338,7 @@ def export_to_excel(path: str, pdf_path: str,
         ws.freeze_panes = "A2"
 
     wb.save(path)
+    wb.close()
 
 
 # ---------------------------------------------------------------------------
@@ -4471,6 +4473,7 @@ def export_project_io_list(path: str, project_id: int,
                                   italic=True, size=10, color="1F4E79")
 
     wb.save(path)
+    wb.close()
 
 
 # ---------------------------------------------------------------------------
@@ -5432,6 +5435,7 @@ class SignalCompositionTemplateDialog(QDialog):
                         ws.cell(row=row, column=5, value=sig.get("signal_description", ""))
                         row += 1
             wb.save(path)
+            wb.close()
             QMessageBox.information(
                 self, "Export Successful",
                 f"Exported {len(self._templates)} template(s) to:\n{path}\n\n"
@@ -5471,6 +5475,7 @@ class SignalCompositionTemplateDialog(QDialog):
 
             # ── Read all rows starting at row 1 ───────────────────────────
             all_rows = list(ws.iter_rows(min_row=1, values_only=True))
+            wb.close()
             if not all_rows:
                 QMessageBox.warning(self, "Empty File",
                                     "No data rows found in the Excel file.")
