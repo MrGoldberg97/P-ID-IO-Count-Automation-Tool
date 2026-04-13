@@ -4152,18 +4152,6 @@ def _get_signal_composition(complex_obj: dict) -> str:
 # ─────────────────────────────────────────────────────────────────────
 # Helper: read the PDF embedded title from file metadata
 # ─────────────────────────────────────────────────────────────────────
-def _read_pdf_title(file_path: str) -> str:
-    """Return the Title field from a PDF's embedded metadata, or '' if unavailable."""
-    try:
-        doc = QPdfDocument(None)
-        doc.load(file_path)
-        title = doc.metaData(QPdfDocument.MetaDataField.Title) or ""
-        doc.close()
-        return title.strip()
-    except Exception:
-        return ""
-
-
 # ─────────────────────────────────────────────────────────────────────
 # Helper: Expand markers to the new 6-column export format
 # ─────────────────────────────────────────────────────────────────────
@@ -4432,14 +4420,6 @@ def export_project_io_list(path: str, project_id: int,
                     if h not in extra_headers_seen:
                         extra_headers_seen.append(h)
 
-    # Build a cache of PDF embedded titles for files that have no drw_name set.
-    # This is read once per unique file_path so the export is efficient.
-    _pdf_title_cache: dict[str, str] = {}
-    for m in markers:
-        fpath = m.get("file_path", "")
-        if fpath and not m.get("drw_name") and fpath not in _pdf_title_cache:
-            _pdf_title_cache[fpath] = _read_pdf_title(fpath)
-
     FIXED_COLS = [
         "Name", "Type", "Description 1",
         "Description 2 (Signal Typical Details)",
@@ -4473,12 +4453,9 @@ def export_project_io_list(path: str, project_id: int,
 
     def _write_row(ws, row_idx: int, r: dict, use_alt: bool):
         fill = alt_fill if use_alt else PatternFill()
-        # Prefer user-supplied Technical Drawing Name; fall back to the PDF's
-        # embedded title (file metadata), then finally to the file name stem.
-        fpath = r.get("file_path", "")
-        drawing_name = (r.get("drw_name", "")
-                        or _pdf_title_cache.get(fpath, "")
-                        or os.path.splitext(r.get("file_name", ""))[0])
+        # If the user set file metadata (drw_name), use it; otherwise fall back
+        # to the PDF file name stem.
+        drawing_name   = r.get("drw_name", "") or os.path.splitext(r.get("file_name", ""))[0]
         drawing_number = r.get("drw_number", "")
         page_number    = r.get("page", 0) + 1
         fixed_values = [
