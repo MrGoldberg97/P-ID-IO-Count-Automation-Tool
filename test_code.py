@@ -270,7 +270,14 @@ class MarkerEditDialog(QDialog):
     displayed and editable here too.
     """
 
-    _RO_BG = "#2A2A2A"
+    @staticmethod
+    def _ro_colors() -> tuple:
+        """Return (bg QColor, fg QColor) for read-only cells, respecting the current theme."""
+        palette = QApplication.instance().palette()
+        is_dark = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        if is_dark:
+            return QColor("#2A2A2A"), QColor("#888888")
+        return QColor("#E0E0E0"), QColor("#555555")
 
     def __init__(self, marker: dict, signal_types: list[dict], parent=None):
         super().__init__(parent)
@@ -397,6 +404,7 @@ class MarkerEditDialog(QDialog):
 
         overrides = tag_parts.get("signal_overrides", [])
         signals = comp.get("signals", [])
+        ro_bg, ro_fg = self._ro_colors()
         for i, sig in enumerate(signals):
             ov = overrides[i] if i < len(overrides) else {}
             r = self.signals_table.rowCount()
@@ -407,7 +415,8 @@ class MarkerEditDialog(QDialog):
                                        sig.get("signal_type", "")]):
                 item = QTableWidgetItem(val)
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                item.setBackground(QBrush(QColor(self._RO_BG)))
+                item.setBackground(QBrush(ro_bg))
+                item.setForeground(QBrush(ro_fg))
                 self.signals_table.setItem(r, ci, item)
 
             # Editable: Description (2), Prefix (3), Suffix (4)
@@ -4179,19 +4188,24 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
 
             # Description 2 = composition title (first field in Signal Config menu)
             desc2    = composition.get("title", "")
-            comments = composition.get("description", "")
+            # Description/comments: prefer per-instance override from tag_parts
+            comments = (tag_parts.get("description") or
+                        composition.get("description", ""))
             file_nm  = m.get("file_name", "")
             drw_nm   = m.get("drw_name", "")
             drw_num  = m.get("drw_number", "")
             page     = m.get("page", 0)
+
+            # Per-signal overrides saved by MarkerEditDialog / CompositionPlacementDialog
+            signal_overrides = tag_parts.get("signal_overrides", [])
 
             # ── Control Module row (not multiplied by count) ─────────
             cm_name = composition.get("control_module", "NA") or "NA"
             if cm_name and cm_name.strip().upper() != "NA":
                 expanded.append({
                     "name":       cm_name,
-                    "type":       composition.get("cm_type", "") or "",
-                    "desc1":      composition.get("cm_description", "") or "",
+                    "type":       tag_parts.get("cm_type") or composition.get("cm_type", "") or "",
+                    "desc1":      tag_parts.get("cm_description") or composition.get("cm_description", "") or "",
                     "desc2":      desc2,
                     "tag_name":   "NA",
                     "comments":   comments,
@@ -4206,8 +4220,8 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
             if tx_name and tx_name.strip().upper() != "NA":
                 expanded.append({
                     "name":       tx_name,
-                    "type":       composition.get("tx_type", "") or "",
-                    "desc1":      composition.get("tx_description", "") or "",
+                    "type":       tag_parts.get("tx_type") or composition.get("tx_type", "") or "",
+                    "desc1":      tag_parts.get("tx_description") or composition.get("tx_description", "") or "",
                     "desc2":      desc2,
                     "tag_name":   "NA",
                     "comments":   comments,
@@ -4218,23 +4232,28 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                 })
 
             # ── Signal rows × count ──────────────────────────────────
-            for signal in composition.get("signals", []):
+            extra_headers = composition.get("extra_column_headers", [])
+            for sig_idx, signal in enumerate(composition.get("signals", [])):
+                ov = signal_overrides[sig_idx] if sig_idx < len(signal_overrides) else {}
                 sig_type = signal.get("signal_type", "")
-                # Always produce prefix-sigtype-suffix; use "NA" where absent
-                tag_name = f"{prefix or 'NA'}-{sig_type}-{suffix or 'NA'}"
+                # Per-signal prefix/suffix override, then global, then "NA"
+                sig_prefix = ov.get("prefix", prefix) or prefix
+                sig_suffix = ov.get("suffix", suffix) or suffix
+                tag_name   = f"{sig_prefix or 'NA'}-{sig_type}-{sig_suffix or 'NA'}"
 
-                # Extra column values keyed as "extra_<header>"
-                extra_vals = signal.get("extra_column_values", [])
-                extra_headers = composition.get("extra_column_headers", [])
+                # Extra column values: prefer per-signal override
+                ov_extras = ov.get("extra_column_values",
+                                   signal.get("extra_column_values", []))
                 extra_dict = {
-                    f"extra_{h}": (extra_vals[i] if i < len(extra_vals) else "")
+                    f"extra_{h}": (ov_extras[i] if i < len(ov_extras) else "")
                     for i, h in enumerate(extra_headers)
                 }
 
                 row = {
                     "name":       signal.get("signal_name", ""),
                     "type":       sig_type,
-                    "desc1":      signal.get("signal_description", ""),
+                    "desc1":      ov.get("signal_description",
+                                        signal.get("signal_description", "")),
                     "desc2":      desc2,
                     "tag_name":   tag_name,
                     "comments":   comments,
@@ -4892,7 +4911,14 @@ class CompositionPlacementDialog(QDialog):
                Prefix, Suffix, and any extra columns.
     """
 
-    _RO_BG = "#2A2A2A"   # grey background for read-only cells
+    @staticmethod
+    def _ro_colors() -> tuple:
+        """Return (bg QColor, fg QColor) for read-only cells, respecting the current theme."""
+        palette = QApplication.instance().palette()
+        is_dark = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        if is_dark:
+            return QColor("#2A2A2A"), QColor("#888888")
+        return QColor("#E0E0E0"), QColor("#555555")
 
     # Fixed columns that mirror the Signal Typical configuration dialog.
     # Columns: Signal Name | Signal Type | Signal Description | Count |
@@ -4998,6 +5024,7 @@ class CompositionPlacementDialog(QDialog):
 
         overrides = tp.get("signal_overrides", [])
         signals = composition.get("signals", [])
+        ro_bg, ro_fg = self._ro_colors()
         for i, sig in enumerate(signals):
             ov = overrides[i] if i < len(overrides) else {}
             r = self.signals_table.rowCount()
@@ -5018,7 +5045,8 @@ class CompositionPlacementDialog(QDialog):
             for ci, val in enumerate(ro_values):
                 item = QTableWidgetItem(val)
                 item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                item.setBackground(QBrush(QColor(self._RO_BG)))
+                item.setBackground(QBrush(ro_bg))
+                item.setForeground(QBrush(ro_fg))
                 self.signals_table.setItem(r, ci, item)
 
             # Editable: Prefix (4), Suffix (5)
@@ -5031,7 +5059,8 @@ class CompositionPlacementDialog(QDialog):
             resulting = sig_type if count <= 1 else f"{count}{sig_type}"
             res_item = QTableWidgetItem(resulting)
             res_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
-            res_item.setBackground(QBrush(QColor(self._RO_BG)))
+            res_item.setBackground(QBrush(ro_bg))
+            res_item.setForeground(QBrush(ro_fg))
             self.signals_table.setItem(r, 6, res_item)
 
             # Editable extra columns (7+)
