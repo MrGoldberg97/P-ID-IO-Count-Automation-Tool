@@ -2223,6 +2223,116 @@ def db_save_theme(theme: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Signal Typical Templates DB helpers
+# ---------------------------------------------------------------------------
+def _ensure_templates_table(con: sqlite3.Connection) -> None:
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS signal_typical_templates (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            title       TEXT    NOT NULL,
+            description TEXT    NOT NULL DEFAULT '',
+            created     TEXT    NOT NULL,
+            modified    TEXT    NOT NULL
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS signal_typical_template_signals (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id        INTEGER NOT NULL
+                               REFERENCES signal_typical_templates(id) ON DELETE CASCADE,
+            signal_name        TEXT    NOT NULL,
+            signal_type        TEXT    NOT NULL,
+            signal_description TEXT    NOT NULL DEFAULT '',
+            sort_order         INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    con.commit()
+
+
+def db_load_all_templates() -> dict:
+    """Return all signal typical templates keyed by id."""
+    with _db_connect() as con:
+        _ensure_templates_table(con)
+        rows = con.execute(
+            "SELECT id, title, description FROM signal_typical_templates ORDER BY id"
+        ).fetchall()
+        result = {}
+        for (tid, title, desc) in rows:
+            sigs = con.execute(
+                "SELECT signal_name, signal_type, signal_description "
+                "FROM signal_typical_template_signals "
+                "WHERE template_id=? ORDER BY sort_order",
+                (tid,)).fetchall()
+            result[tid] = {
+                "id":          tid,
+                "title":       title,
+                "description": desc,
+                "signals": [
+                    {"signal_name": s[0], "signal_type": s[1],
+                     "signal_description": s[2]}
+                    for s in sigs
+                ],
+            }
+    return result
+
+
+def db_save_new_template(title: str, description: str,
+                         signals: list[dict]) -> int:
+    """Insert a new template and return its id."""
+    from datetime import datetime
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with _db_connect() as con:
+        _ensure_templates_table(con)
+        cur = con.execute(
+            "INSERT INTO signal_typical_templates (title, description, created, modified) "
+            "VALUES (?, ?, ?, ?)",
+            (title, description or "", now, now))
+        tid = cur.lastrowid
+        for order, sig in enumerate(signals):
+            con.execute(
+                "INSERT INTO signal_typical_template_signals "
+                "(template_id, signal_name, signal_type, signal_description, sort_order) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (tid, sig["signal_name"], sig["signal_type"],
+                 sig.get("signal_description", ""), order))
+        con.commit()
+    return tid
+
+
+def db_update_template(template_id: int, title: str, description: str,
+                       signals: list[dict]) -> None:
+    """Replace an existing template's data."""
+    from datetime import datetime
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with _db_connect() as con:
+        _ensure_templates_table(con)
+        con.execute(
+            "UPDATE signal_typical_templates "
+            "SET title=?, description=?, modified=? WHERE id=?",
+            (title, description or "", now, template_id))
+        con.execute(
+            "DELETE FROM signal_typical_template_signals WHERE template_id=?",
+            (template_id,))
+        for order, sig in enumerate(signals):
+            con.execute(
+                "INSERT INTO signal_typical_template_signals "
+                "(template_id, signal_name, signal_type, signal_description, sort_order) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (template_id, sig["signal_name"], sig["signal_type"],
+                 sig.get("signal_description", ""), order))
+        con.commit()
+
+
+def db_delete_template(template_id: int) -> None:
+    """Delete a template and all its signals."""
+    with _db_connect() as con:
+        _ensure_templates_table(con)
+        con.execute(
+            "DELETE FROM signal_typical_templates WHERE id=?", (template_id,))
+        con.commit()
+
+
+# ---------------------------------------------------------------------------
 # Session DB helpers
 # ---------------------------------------------------------------------------
 def _ensure_sessions_table(con: sqlite3.Connection) -> None:
@@ -5048,37 +5158,46 @@ class SignalCompositionTemplateDialog(QDialog):
         self.setLayout(lay)
     
     def _load_default_templates(self):
-        """Load default templates (stored in memory for this session)."""
-        self._templates = {
-            1: {
-                "id": 1,
-                "title": "On-Off Valve",
-                "description": "2/2 Solenoid Valve",
-                "signals": [
-                    {"signal_name": "XS", "signal_type": "HDO", "signal_description": "Valve position"},
-                    {"signal_name": "ZSH", "signal_type": "HDI", "signal_description": "Open limit"},
-                    {"signal_name": "ZSL", "signal_type": "HDI", "signal_description": "Closed limit"}
-                ]
-            },
-            2: {
-                "id": 2,
-                "title": "Check Valve",
-                "description": "Inline Check Valve",
-                "signals": [
-                    {"signal_name": "P_in", "signal_type": "AI", "signal_description": "Inlet Pressure"},
-                    {"signal_name": "P_out", "signal_type": "AI", "signal_description": "Outlet Pressure"}
-                ]
-            },
-            3: {
-                "id": 3,
-                "title": "Flow Meter",
-                "description": "Flow Rate Meter",
-                "signals": [
-                    {"signal_name": "FLOW", "signal_type": "AI", "signal_description": "Flow rate"},
-                    {"signal_name": "PULSE", "signal_type": "HDI", "signal_description": "Pulse output"}
-                ]
-            }
-        }
+        """Load templates from the database. Seed three built-in defaults if empty."""
+        self._templates = db_load_all_templates()
+        if not self._templates:
+            defaults = [
+                {
+                    "title": "On-Off Valve",
+                    "description": "2/2 Solenoid Valve",
+                    "signals": [
+                        {"signal_name": "XS",  "signal_type": "HDO",
+                         "signal_description": "Valve position"},
+                        {"signal_name": "ZSH", "signal_type": "HDI",
+                         "signal_description": "Open limit"},
+                        {"signal_name": "ZSL", "signal_type": "HDI",
+                         "signal_description": "Closed limit"},
+                    ],
+                },
+                {
+                    "title": "Check Valve",
+                    "description": "Inline Check Valve",
+                    "signals": [
+                        {"signal_name": "P_in",  "signal_type": "AI",
+                         "signal_description": "Inlet Pressure"},
+                        {"signal_name": "P_out", "signal_type": "AI",
+                         "signal_description": "Outlet Pressure"},
+                    ],
+                },
+                {
+                    "title": "Flow Meter",
+                    "description": "Flow Rate Meter",
+                    "signals": [
+                        {"signal_name": "FLOW",  "signal_type": "AI",
+                         "signal_description": "Flow rate"},
+                        {"signal_name": "PULSE", "signal_type": "HDI",
+                         "signal_description": "Pulse output"},
+                    ],
+                },
+            ]
+            for d in defaults:
+                tid = db_save_new_template(d["title"], d["description"], d["signals"])
+                self._templates[tid] = {"id": tid, **d}
         self._refresh_template_list()
     
     def _refresh_template_list(self):
@@ -5142,63 +5261,67 @@ class SignalCompositionTemplateDialog(QDialog):
         self.title_edit.setFocus()
     
     def _save_template(self):
-        """Save current template."""
+        """Save current template to the database."""
         title = self.title_edit.text().strip()
         if not title:
             QMessageBox.warning(self, "Required", "Template name is required.")
             return
-        
+
         # Collect signals
         signals = []
         for r in range(self.signals_table.rowCount()):
             sig_name = (self.signals_table.item(r, 0) or QTableWidgetItem()).text().strip()
             sig_type = (self.signals_table.item(r, 1) or QTableWidgetItem()).text().strip()
             sig_desc = (self.signals_table.item(r, 2) or QTableWidgetItem()).text().strip()
-            
+
             if sig_name and sig_type:
                 signals.append({
                     "signal_name": sig_name,
                     "signal_type": sig_type,
-                    "signal_description": sig_desc
+                    "signal_description": sig_desc,
                 })
-        
+
         if not signals:
             QMessageBox.warning(self, "Required", "At least one signal is required.")
             return
-        
+
+        description = self.desc_edit.toPlainText().strip()
+
         if self._current_template_id is None:
-            # New template
-            new_id = max(self._templates.keys()) + 1 if self._templates else 1
+            # New template — persist to DB
+            new_id = db_save_new_template(title, description, signals)
         else:
+            # Update existing — persist to DB
             new_id = self._current_template_id
-        
+            db_update_template(new_id, title, description, signals)
+
         self._templates[new_id] = {
-            "id": new_id,
-            "title": title,
-            "description": self.desc_edit.toPlainText().strip(),
-            "signals": signals
+            "id":          new_id,
+            "title":       title,
+            "description": description,
+            "signals":     signals,
         }
-        
         self._current_template_id = new_id
         self._refresh_template_list()
         QMessageBox.information(self, "Saved", f"Template '{title}' saved successfully.")
     
     def _delete_template(self):
-        """Delete selected template."""
+        """Delete selected template from the database."""
         items = self.template_list.selectedItems()
         if not items:
             QMessageBox.warning(self, "No Selection", "Please select a template to delete.")
             return
-        
+
         template_id = items[0].data(Qt.ItemDataRole.UserRole)
         title = self._templates[template_id]["title"]
-        
+
         ans = QMessageBox.question(
             self, "Delete Template",
             f"Delete template '{title}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        
+
         if ans == QMessageBox.StandardButton.Yes:
+            db_delete_template(template_id)
             del self._templates[template_id]
             if self._current_template_id == template_id:
                 self._clear_form()
@@ -5253,7 +5376,7 @@ class SignalCompositionTemplateDialog(QDialog):
             QMessageBox.critical(self, "Export Failed", str(e))
 
     def _import_templates_xlsx(self):
-        """Import templates from an Excel file."""
+        """Import templates from an Excel file with duplicate-title handling."""
         path, _ = QFileDialog.getOpenFileName(
             self, "Import Signal Typical Templates",
             "", "Excel Files (*.xlsx)")
@@ -5268,6 +5391,8 @@ class SignalCompositionTemplateDialog(QDialog):
                 QMessageBox.warning(self, "Empty File",
                                     "No data rows found in the Excel file.")
                 return
+
+            # Parse rows into a dict keyed by template title
             imported: dict[str, dict] = {}
             for row in rows:
                 if not row or len(row) < 4:
@@ -5281,31 +5406,92 @@ class SignalCompositionTemplateDialog(QDialog):
                     continue
                 if title not in imported:
                     imported[title] = {
-                        "id": None,
-                        "title": title,
+                        "title":       title,
                         "description": desc,
-                        "signals": []
+                        "signals":     [],
                     }
                 if sig_name and sig_type:
                     imported[title]["signals"].append({
-                        "signal_name": sig_name,
-                        "signal_type": sig_type,
+                        "signal_name":        sig_name,
+                        "signal_type":        sig_type,
                         "signal_description": sig_desc,
                     })
+
             if not imported:
                 QMessageBox.warning(self, "No Templates",
                                     "Could not find any valid template data.")
                 return
-            # Assign IDs and merge
-            next_id = max(self._templates.keys(), default=0) + 1
+
+            # Build a title → existing template mapping for conflict detection
+            existing_by_title: dict[str, dict] = {
+                t["title"]: t for t in self._templates.values()
+            }
+
+            added = 0
+            overwritten = 0
+            skipped = 0
+
             for tmpl in imported.values():
-                tmpl["id"] = next_id
-                self._templates[next_id] = tmpl
-                next_id += 1
+                title = tmpl["title"]
+                signals = tmpl["signals"]
+                description = tmpl["description"]
+
+                if title in existing_by_title:
+                    # Duplicate title — ask the user what to do
+                    mb = QMessageBox(self)
+                    mb.setWindowTitle("Duplicate Template")
+                    mb.setText(
+                        f"A template named <b>{title}</b> already exists.<br><br>"
+                        "What would you like to do?")
+                    overwrite_btn = mb.addButton(
+                        "Overwrite existing", QMessageBox.ButtonRole.AcceptRole)
+                    new_btn = mb.addButton(
+                        "Add as new template", QMessageBox.ButtonRole.YesRole)
+                    skip_btn = mb.addButton(
+                        "Skip", QMessageBox.ButtonRole.RejectRole)
+                    mb.setDefaultButton(skip_btn)
+                    mb.exec()
+                    clicked = mb.clickedButton()
+
+                    if clicked == overwrite_btn:
+                        existing = existing_by_title[title]
+                        db_update_template(existing["id"], title, description, signals)
+                        existing["description"] = description
+                        existing["signals"]     = signals
+                        overwritten += 1
+                    elif clicked == new_btn:
+                        new_id = db_save_new_template(title, description, signals)
+                        self._templates[new_id] = {
+                            "id":          new_id,
+                            "title":       title,
+                            "description": description,
+                            "signals":     signals,
+                        }
+                        added += 1
+                    else:
+                        skipped += 1
+                else:
+                    # New title — add directly
+                    new_id = db_save_new_template(title, description, signals)
+                    self._templates[new_id] = {
+                        "id":          new_id,
+                        "title":       title,
+                        "description": description,
+                        "signals":     signals,
+                    }
+                    added += 1
+
             self._refresh_template_list()
+            parts = []
+            if added:
+                parts.append(f"{added} added")
+            if overwritten:
+                parts.append(f"{overwritten} overwritten")
+            if skipped:
+                parts.append(f"{skipped} skipped")
             QMessageBox.information(
-                self, "Import Successful",
-                f"Imported {len(imported)} template(s) from:\n{path}")
+                self, "Import Complete",
+                f"Import finished: {', '.join(parts)}.\nSource: {path}")
         except Exception as e:
             QMessageBox.critical(self, "Import Failed", str(e))
 
