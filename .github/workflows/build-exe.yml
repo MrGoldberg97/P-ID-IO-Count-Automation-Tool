@@ -1,0 +1,45 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PySide6 pypdf openpyxl pyinstaller
+
+      - name: Build executable with PyInstaller
+        run: pyinstaller "P-ID-IO-Count-Automation-Tool.spec"
+
+      - name: Upload executable as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: P-ID-IO-Count-Automation-Tool-windows
+          path: dist/P-ID-IO-Count-Automation-Tool.exe
+          if-no-files-found: error
+
+      # ── Create a GitHub Release with the .exe attached on every version tag ──
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/P-ID-IO-Count-Automation-Tool.exe
+          generate_release_notes: true
