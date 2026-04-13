@@ -4150,6 +4150,21 @@ def _get_signal_composition(complex_obj: dict) -> str:
     return " ".join(composition_parts)  # e.g., "2HDI 1HDO"
 
 # ─────────────────────────────────────────────────────────────────────
+# Helper: read the PDF embedded title from file metadata
+# ─────────────────────────────────────────────────────────────────────
+def _read_pdf_title(file_path: str) -> str:
+    """Return the Title field from a PDF's embedded metadata, or '' if unavailable."""
+    try:
+        doc = QPdfDocument(None)
+        doc.load(file_path)
+        title = doc.metaData(QPdfDocument.MetaDataField.Title) or ""
+        doc.close()
+        return title.strip()
+    except Exception:
+        return ""
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Helper: Expand markers to the new 6-column export format
 # ─────────────────────────────────────────────────────────────────────
 def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
@@ -4194,6 +4209,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
             file_nm  = m.get("file_name", "")
             drw_nm   = m.get("drw_name", "")
             drw_num  = m.get("drw_number", "")
+            file_pt  = m.get("file_path", "")
             page     = m.get("page", 0)
 
             # Per-signal overrides saved by MarkerEditDialog / CompositionPlacementDialog
@@ -4211,6 +4227,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                     "comments":   comments,
                     "page":       page,
                     "file_name":  file_nm,
+                    "file_path":  file_pt,
                     "drw_name":   drw_nm,
                     "drw_number": drw_num,
                 })
@@ -4227,6 +4244,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                     "comments":   comments,
                     "page":       page,
                     "file_name":  file_nm,
+                    "file_path":  file_pt,
                     "drw_name":   drw_nm,
                     "drw_number": drw_num,
                 })
@@ -4259,6 +4277,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                     "comments":   comments,
                     "page":       page,
                     "file_name":  file_nm,
+                    "file_path":  file_pt,
                     "drw_name":   drw_nm,
                     "drw_number": drw_num,
                     **extra_dict,
@@ -4277,6 +4296,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                 "comments":   m.get("comment", "") or m.get("signal_comment", ""),
                 "page":       m.get("page", 0),
                 "file_name":  m.get("file_name", ""),
+                "file_path":  m.get("file_path", ""),
                 "drw_name":   m.get("drw_name", ""),
                 "drw_number": m.get("drw_number", ""),
             })
@@ -4412,6 +4432,14 @@ def export_project_io_list(path: str, project_id: int,
                     if h not in extra_headers_seen:
                         extra_headers_seen.append(h)
 
+    # Build a cache of PDF embedded titles for files that have no drw_name set.
+    # This is read once per unique file_path so the export is efficient.
+    _pdf_title_cache: dict[str, str] = {}
+    for m in markers:
+        fpath = m.get("file_path", "")
+        if fpath and not m.get("drw_name") and fpath not in _pdf_title_cache:
+            _pdf_title_cache[fpath] = _read_pdf_title(fpath)
+
     FIXED_COLS = [
         "Name", "Type", "Description 1",
         "Description 2 (Signal Typical Details)",
@@ -4445,8 +4473,12 @@ def export_project_io_list(path: str, project_id: int,
 
     def _write_row(ws, row_idx: int, r: dict, use_alt: bool):
         fill = alt_fill if use_alt else PatternFill()
-        # Prefer user-supplied Technical Drawing Name; fall back to file name stem
-        drawing_name   = r.get("drw_name", "") or os.path.splitext(r.get("file_name", ""))[0]
+        # Prefer user-supplied Technical Drawing Name; fall back to the PDF's
+        # embedded title (file metadata), then finally to the file name stem.
+        fpath = r.get("file_path", "")
+        drawing_name = (r.get("drw_name", "")
+                        or _pdf_title_cache.get(fpath, "")
+                        or os.path.splitext(r.get("file_name", ""))[0])
         drawing_number = r.get("drw_number", "")
         page_number    = r.get("page", 0) + 1
         fixed_values = [
@@ -4509,6 +4541,70 @@ def export_project_io_list(path: str, project_id: int,
                     value=f"Total rows: {total_rows}"
                     ).font = Font(name="Arial", bold=True,
                                   italic=True, size=10, color="1F4E79")
+
+    # ── "Final Count" sheet — signal typical counts only ──────────────────
+    ws_count = wb.create_sheet("Final Count")
+
+    # Count each signal type from signal rows only (not CM/TX rows).
+    # Signal rows are identified by their type being one of the 8 IO types.
+    signal_type_counts: dict[str, int] = {t: 0 for t in _SIGNAL_IO_TYPES}
+    for r in expanded_all:
+        sig_t = r.get("type", "")
+        if sig_t in signal_type_counts:
+            signal_type_counts[sig_t] += 1
+
+    # Header row
+    fc_hdr_font  = Font(name="Arial", bold=True, color="FFFFFF", size=11)
+    fc_hdr_fill  = PatternFill("solid", start_color="1F4E79")
+    fc_hdr_align = Alignment(horizontal="center", vertical="center")
+    fc_row_font  = Font(name="Arial", size=11)
+    fc_alt_fill  = PatternFill("solid", start_color="EEF2FA")
+    fc_num_align = Alignment(horizontal="center", vertical="center")
+    fc_lbl_align = Alignment(horizontal="left",   vertical="center")
+
+    for ci, hdr in enumerate(("Signal Type", "Count"), start=1):
+        c = ws_count.cell(row=1, column=ci, value=hdr)
+        c.font      = fc_hdr_font
+        c.fill      = fc_hdr_fill
+        c.alignment = fc_hdr_align
+    ws_count.column_dimensions["A"].width = 20
+    ws_count.column_dimensions["B"].width = 14
+    ws_count.row_dimensions[1].height = 24
+
+    # Data rows
+    grand_total = 0
+    for ri, sig_type in enumerate(_SIGNAL_IO_TYPES, start=2):
+        count_val = signal_type_counts[sig_type]
+        grand_total += count_val
+        use_alt = (ri % 2 == 0)
+        row_fill = fc_alt_fill if use_alt else PatternFill()
+
+        lbl_cell = ws_count.cell(row=ri, column=1, value=sig_type)
+        lbl_cell.font      = fc_row_font
+        lbl_cell.fill      = row_fill
+        lbl_cell.alignment = fc_lbl_align
+
+        cnt_cell = ws_count.cell(row=ri, column=2, value=count_val)
+        cnt_cell.font      = fc_row_font
+        cnt_cell.fill      = row_fill
+        cnt_cell.alignment = fc_num_align
+
+    # Grand total row
+    total_row = len(_SIGNAL_IO_TYPES) + 2
+    tot_font  = Font(name="Arial", bold=True, size=11, color="1F4E79")
+    tot_fill  = PatternFill("solid", start_color="D9E1F2")
+
+    lbl_tot = ws_count.cell(row=total_row, column=1, value="TOTAL")
+    lbl_tot.font      = tot_font
+    lbl_tot.fill      = tot_fill
+    lbl_tot.alignment = fc_lbl_align
+
+    cnt_tot = ws_count.cell(row=total_row, column=2, value=grand_total)
+    cnt_tot.font      = tot_font
+    cnt_tot.fill      = tot_fill
+    cnt_tot.alignment = fc_num_align
+
+    ws_count.freeze_panes = "A2"
 
     wb.save(path)
     wb.close()
