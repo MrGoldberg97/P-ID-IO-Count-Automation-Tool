@@ -2742,29 +2742,72 @@ def db_load_signal_composition(composition_id: int) -> dict:
 def db_load_compositions_by_owner(owner_id: int) -> list[dict]:
     """
     Load all signal compositions for a specific owner.
-    
+
+    Uses a single database connection and two bulk queries (compositions + signals)
+    instead of opening a new connection per composition, which avoids the N+1
+    performance problem when a project has many typicals.
+
     Args:
         owner_id: From composition_owners table
-        
+
     Returns:
         List of composition dicts with signals
     """
     with _db_connect() as con:
-        # Get all compositions for this owner
+        # Load all compositions for this owner in one query
         rows = con.execute(
-            "SELECT sc.id FROM signal_compositions sc "
+            "SELECT sc.id, sc.title, sc.description, sc.control_module, sc.transmitter, "
+            "sc.extra_column_headers, sc.cm_type, sc.cm_description, sc.tx_type, "
+            "sc.tx_description, sc.category "
+            "FROM signal_compositions sc "
             "JOIN composition_ownership co ON co.composition_id = sc.id "
             "WHERE co.owner_id = ? "
             "ORDER BY co.sort_order, sc.id",
             (owner_id,)).fetchall()
-    
-    compositions = []
-    for row in rows:
-        comp = db_load_signal_composition(row[0])
-        if comp:
-            compositions.append(comp)
-    
-    return compositions
+
+        if not rows:
+            return []
+
+        # Load all signals for these compositions in one bulk query
+        comp_ids = [r[0] for r in rows]
+        placeholders = ",".join("?" for _ in comp_ids)
+        sig_rows = con.execute(
+            f"SELECT composition_id, signal_name, signal_type, signal_description, "
+            f"prefix, suffix, extra_column_values "
+            f"FROM signal_composition_signals "
+            f"WHERE composition_id IN ({placeholders}) "
+            f"ORDER BY composition_id, sort_order",
+            comp_ids).fetchall()
+
+    # Group signals by composition id
+    signals_by_comp: dict = {}
+    for s in sig_rows:
+        signals_by_comp.setdefault(s[0], []).append({
+            "signal_name": s[1],
+            "signal_type": s[2],
+            "signal_description": s[3] or "",
+            "prefix": s[4] or "NA",
+            "suffix": s[5] or "NA",
+            "extra_column_values": json.loads(s[6] or "[]"),
+        })
+
+    return [
+        {
+            "id": r[0],
+            "title": r[1],
+            "description": r[2] or "",
+            "control_module": r[3] or "NA",
+            "transmitter": r[4] or "NA",
+            "extra_column_headers": json.loads(r[5] or "[]"),
+            "cm_type": r[6] or "NA",
+            "cm_description": r[7] or "NA",
+            "tx_type": r[8] or "NA",
+            "tx_description": r[9] or "NA",
+            "category": r[10] or "",
+            "signals": signals_by_comp.get(r[0], []),
+        }
+        for r in rows
+    ]
 
 
 def db_load_all_compositions_for_project(project_id: int) -> dict:
@@ -5331,8 +5374,6 @@ class SignalCompositionConfigDialog(QDialog):
         self._owner_name = owner_name
         self._current_comp_id = None
         self._compositions = db_load_compositions_by_owner(owner_id)
-        self._populating_tree = False  # re-entrancy guard for _populate_tree
-        
         self._build_ui()
     
     def _build_ui(self):
@@ -5576,12 +5617,18 @@ class SignalCompositionConfigDialog(QDialog):
 
     def _populate_tree(self):
         """Populate the tree of typicals grouped by category."""
-        # Guard against re-entrant calls: rowsInserted fires while we add items,
-        # which would schedule _sync_categories_from_tree → _populate_tree again.
-        if self._populating_tree:
-            return
-        self._populating_tree = True
+        # Disconnect rowsInserted for the duration of this programmatic rebuild.
+        # rowsInserted fires for every item inserted, which would otherwise schedule
+        # a _sync_categories_from_tree timer after each item.  Because the timer fires
+        # *after* this method returns (next event-loop iteration), the re-entrancy flag
+        # alone cannot break the resulting timer chain.  Disconnecting the signal means
+        # only genuine user drag-drop operations trigger the sync, not our own rebuilds.
         try:
+            self.comp_tree.model().rowsInserted.disconnect(self._schedule_tree_sync)
+        except RuntimeError:
+            pass  # already disconnected; safe to ignore
+        try:
+            self.comp_tree.setUpdatesEnabled(False)
             self.comp_tree.clear()
             # Group by category
             groups: dict[str, list] = {}
@@ -5619,7 +5666,8 @@ class SignalCompositionConfigDialog(QDialog):
                         | Qt.ItemFlag.ItemIsDragEnabled)
                 cat_item.setExpanded(True)
         finally:
-            self._populating_tree = False
+            self.comp_tree.setUpdatesEnabled(True)
+            self.comp_tree.model().rowsInserted.connect(self._schedule_tree_sync)
     
     def _on_comp_selected(self):
         """When user selects a typical from the tree."""
