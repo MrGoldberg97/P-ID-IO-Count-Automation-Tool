@@ -5574,6 +5574,12 @@ class SignalCompositionTemplateDialog(QDialog):
                     bulk_action = None  # decide per template
 
             # ── Process each imported template ─────────────────────────────
+            # Remember the template that is currently open in the editor so
+            # we can reload it after the list refresh (template_list.clear()
+            # triggers _on_template_selected → _clear_form(), blanking the
+            # editor even when the overwrite updated its signals).
+            editing_id_before = self._current_template_id
+
             added = 0
             overwritten = 0
             skipped = 0
@@ -5637,7 +5643,33 @@ class SignalCompositionTemplateDialog(QDialog):
                     }
                     added += 1
 
+            # ── Reload from DB + refresh list ──────────────────────────────
+            # Reloading from the DB guarantees the in-memory state mirrors
+            # exactly what was written, regardless of any edge case in the
+            # in-memory patch above.
+            self._templates = db_load_all_templates()
             self._refresh_template_list()
+
+            # If the template that was open in the editor was affected by the
+            # import, reload its form so the user immediately sees the updated
+            # signals (without having to re-click the item in the list).
+            if editing_id_before is not None and editing_id_before in self._templates:
+                reloaded = self._templates[editing_id_before]
+                self._current_template_id = editing_id_before
+                self.title_edit.setText(reloaded["title"])
+                self.desc_edit.setPlainText(reloaded["description"])
+                self._populate_signals_table(reloaded["signals"])
+                # Re-select the item in the list so it stays highlighted.
+                # Block signals to avoid triggering _on_template_selected
+                # again (which would overwrite the text we just set).
+                self.template_list.blockSignals(True)
+                for i in range(self.template_list.count()):
+                    item = self.template_list.item(i)
+                    if item.data(Qt.ItemDataRole.UserRole) == editing_id_before:
+                        self.template_list.setCurrentItem(item)
+                        break
+                self.template_list.blockSignals(False)
+
             parts = []
             if added:
                 parts.append(f"{added} added")
