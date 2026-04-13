@@ -5443,12 +5443,17 @@ class SignalCompositionTemplateDialog(QDialog):
     def _import_templates_xlsx(self):
         """Import templates from an Excel file with duplicate-title handling.
 
-        Expected column order (row 1 = header, rows 2+ = data):
+        Expected column order:
             A  Template Title       (required)
             B  Template Description (optional)
             C  Signal Name          (optional – template may have no signals)
-            D  Signal Type          (required when Signal Name is present)
+            D  Signal Type          (optional – defaults to empty string)
             E  Signal Description   (optional)
+
+        Row 1 is treated as a header row if cell A1 looks like a column heading
+        (e.g. "Template Title", "Title", etc.).  If cell A1 contains real data
+        (e.g. an actual template name) the row is treated as data so that files
+        created manually without a header still import correctly.
 
         Multiple rows with the same Template Title are grouped into a single
         template; Title and Description are taken from the first row of each
@@ -5463,7 +5468,27 @@ class SignalCompositionTemplateDialog(QDialog):
             from openpyxl import load_workbook
             wb = load_workbook(path, read_only=True, data_only=True)
             ws = wb.active
-            rows = list(ws.iter_rows(min_row=2, values_only=True))
+
+            # ── Read all rows starting at row 1 ───────────────────────────
+            all_rows = list(ws.iter_rows(min_row=1, values_only=True))
+            if not all_rows:
+                QMessageBox.warning(self, "Empty File",
+                                    "No data rows found in the Excel file.")
+                return
+
+            # ── Detect whether row 1 is a header ──────────────────────────
+            # If cell A1 contains a known header keyword we skip that row;
+            # otherwise we treat row 1 as real data (manually created files).
+            _HEADER_KEYWORDS = {
+                "template title", "template name", "title", "name",
+                "signal name", "signal type", "signal description",
+                "description",
+            }
+            first_cell_val = all_rows[0][0] if all_rows[0] else None
+            first_cell = str(first_cell_val).strip().lower() if first_cell_val is not None else ""
+            is_header_row = first_cell in _HEADER_KEYWORDS or first_cell.startswith("template")
+            rows = all_rows[1:] if is_header_row else all_rows
+
             if not rows:
                 QMessageBox.warning(self, "Empty File",
                                     "No data rows found in the Excel file.")
@@ -5474,7 +5499,7 @@ class SignalCompositionTemplateDialog(QDialog):
             for row in rows:
                 if not row:
                     continue
-                # Pad to 5 columns
+                # Pad to 5 columns so index access is always safe
                 padded = list(row) + [None] * 5
                 title    = str(padded[0]).strip() if padded[0] is not None else ""
                 desc     = str(padded[1]).strip() if padded[1] is not None else ""
@@ -5491,8 +5516,9 @@ class SignalCompositionTemplateDialog(QDialog):
                         "description": desc,
                         "signals":     [],
                     }
-                # Only add a signal row when both name and type are present
-                if sig_name and sig_type:
+                # Add a signal row whenever at least the Signal Name is present.
+                # Signal Type and Description default to empty string if omitted.
+                if sig_name:
                     imported[title]["signals"].append({
                         "signal_name":        sig_name,
                         "signal_type":        sig_type,
@@ -5502,7 +5528,8 @@ class SignalCompositionTemplateDialog(QDialog):
             if not imported:
                 QMessageBox.warning(self, "No Templates",
                                     "Could not find any valid template data.\n\n"
-                                    "Make sure the file has the correct column order:\n"
+                                    "Make sure the file uses the following column order "
+                                    "(a header row is optional):\n"
                                     "A: Template Title  B: Template Description\n"
                                     "C: Signal Name     D: Signal Type  E: Signal Description")
                 return
@@ -6511,8 +6538,12 @@ class SignalCompositionConfigDialog(QDialog):
                     self.signals_table.insertRow(r)
                     
                     self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-                    self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
-                    self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
+                    # Default empty type/description to "NA" so the composition
+                    # passes the mandatory-field validation at save time.
+                    sig_type_val = sig.get("signal_type", "") or "NA"
+                    self.signals_table.setItem(r, 1, QTableWidgetItem(sig_type_val))
+                    sig_desc = sig.get("signal_description", "") or "NA"
+                    self.signals_table.setItem(r, 2, QTableWidgetItem(sig_desc))
                     self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
                     self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
                     self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
@@ -6665,7 +6696,7 @@ class SignalCompositionConfigDialog(QDialog):
                 for ec in range(len(extra_column_headers))
             ]
             
-            if sig_name and sig_type and sig_desc:
+            if sig_name and sig_type:
                 try:
                     count = int(count_str) if count_str else 1
                 except ValueError:
@@ -6674,7 +6705,7 @@ class SignalCompositionConfigDialog(QDialog):
                 signals.append({
                     "signal_name": sig_name,
                     "signal_type": sig_type,
-                    "signal_description": sig_desc,
+                    "signal_description": sig_desc,  # may be empty; validated separately
                     "count": count,
                     "prefix": prefix,
                     "suffix": suffix,
