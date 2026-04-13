@@ -6039,7 +6039,7 @@ class SignalCompositionConfigDialog(QDialog):
             # Group by category
             groups: dict[str, list] = {}
             for comp in self._compositions:
-                cat = comp.get("category", "").strip() or "(General)"
+                cat = comp.get("category", "").strip() or "No group assigned"
                 groups.setdefault(cat, []).append(comp)
 
             # Also include pending (empty) categories created with "Add Category"
@@ -6047,9 +6047,9 @@ class SignalCompositionConfigDialog(QDialog):
                 if pending not in groups:
                     groups[pending] = []
 
-            # Sort: (General) first, then alphabetical
+            # Sort: "No group assigned" first, then alphabetical
             sorted_cats = sorted(groups.keys(),
-                                 key=lambda c: ("" if c == "(General)" else c.lower()))
+                                 key=lambda c: ("" if c == "No group assigned" else c.lower()))
             for cat in sorted_cats:
                 cat_item = QTreeWidgetItem(self.comp_tree, [cat])
                 cat_item.setData(0, Qt.ItemDataRole.UserRole, None)  # not a composition
@@ -6292,11 +6292,11 @@ class SignalCompositionConfigDialog(QDialog):
             parent = item.parent()
             if parent:
                 name = parent.text(0)
-                return "" if name == "(General)" else name
+                return "" if name == "No group assigned" else name
             return None
         # It's a category header
         name = item.text(0)
-        return "" if name == "(General)" else name
+        return "" if name == "No group assigned" else name
 
     def _all_category_names(self) -> list[str]:
         """Return sorted list of all category names currently in the tree."""
@@ -6334,7 +6334,7 @@ class SignalCompositionConfigDialog(QDialog):
             QMessageBox.warning(self, "No Selection",
                                 "Please click a category header to rename.")
             return
-        display = old_name if old_name else "(General)"
+        display = old_name if old_name else "No group assigned"
         new_name, ok = QInputDialog.getText(
             self, "Rename Category", f"Rename '{display}' to:",
             text=old_name)
@@ -6358,14 +6358,14 @@ class SignalCompositionConfigDialog(QDialog):
             QMessageBox.warning(self, "No Selection",
                                 "Please click a category header to delete.")
             return
-        display = old_name if old_name else "(General)"
+        display = old_name if old_name else "No group assigned"
         members = [c for c in self._compositions
                    if c.get("category", "").strip() == old_name]
         if members:
             ans = QMessageBox.question(
                 self, "Delete Category",
                 f"Category '{display}' has {len(members)} typical(s).\n"
-                "Move them to (General) and delete the category?",
+                "Move them to 'No group assigned' and delete the category?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if ans != QMessageBox.StandardButton.Yes:
                 return
@@ -6394,10 +6394,20 @@ class SignalCompositionConfigDialog(QDialog):
         clones items without preserving custom flags).
         """
         root = self.comp_tree.invisibleRootItem()
+        # Preserve all categories currently visible in the tree (even those that
+        # become empty after a typical is dragged out of them) so that a move
+        # operation does not silently delete the source category.
+        pnc = getattr(self, "_pending_new_categories", set())
+        for ci in range(root.childCount()):
+            cat_label = root.child(ci).text(0)
+            if cat_label != "No group assigned":
+                pnc.add(cat_label)
+        self._pending_new_categories = pnc
+
         for ci in range(root.childCount()):
             cat_item = root.child(ci)
             cat_label = cat_item.text(0)
-            cat_value = "" if cat_label == "(General)" else cat_label
+            cat_value = "" if cat_label == "No group assigned" else cat_label
             for ti in range(cat_item.childCount()):
                 comp_item = cat_item.child(ti)
                 comp_id = comp_item.data(0, Qt.ItemDataRole.UserRole)
@@ -6603,6 +6613,8 @@ class SignalCompositionConfigDialog(QDialog):
     def _on_apply(self):
         """Validate and save changes without closing the dialog."""
         if self._do_save():
+            self._compositions = db_load_compositions_by_owner(self._owner_id)
+            self._populate_tree()
             QMessageBox.information(self, "Saved", "Changes saved successfully.")
 
     def _do_save(self) -> bool:
