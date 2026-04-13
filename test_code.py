@@ -2597,7 +2597,9 @@ def db_load_project_markers(project_id: int,
                     m.signal_type_comment,
                     m.is_composition,
                     m.composition_id,
-                    m.tag_parts
+                    m.tag_parts,
+                    COALESCE(pf.drw_name,''),
+                    COALESCE(pf.drw_number,'')
                 FROM project_files pf
                 JOIN markers m
                   ON REPLACE(m.pdf, '\\', '/') = REPLACE(pf.file_path, '\\', '/')
@@ -2622,7 +2624,9 @@ def db_load_project_markers(project_id: int,
                     m.signal_type_comment,
                     m.is_composition,
                     m.composition_id,
-                    m.tag_parts
+                    m.tag_parts,
+                    COALESCE(pf.drw_name,''),
+                    COALESCE(pf.drw_number,'')
                 FROM project_files pf
                 JOIN markers m
                   ON REPLACE(m.pdf, '\\', '/') = REPLACE(pf.file_path, '\\', '/')
@@ -2654,6 +2658,8 @@ def db_load_project_markers(project_id: int,
             "is_composition":       bool(r[11]) if r[11] else False,
             "composition_id":       r[12],
             "tag_parts":            tag_parts,
+            "drw_name":             r[14] if len(r) > 14 else "",
+            "drw_number":           r[15] if len(r) > 15 else "",
         })
     return result
 
@@ -4175,34 +4181,40 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
             desc2    = composition.get("title", "")
             comments = composition.get("description", "")
             file_nm  = m.get("file_name", "")
+            drw_nm   = m.get("drw_name", "")
+            drw_num  = m.get("drw_number", "")
             page     = m.get("page", 0)
 
             # ── Control Module row (not multiplied by count) ─────────
             cm_name = composition.get("control_module", "NA") or "NA"
             if cm_name and cm_name.strip().upper() != "NA":
                 expanded.append({
-                    "name":      cm_name,
-                    "type":      composition.get("cm_type", "") or "",
-                    "desc1":     composition.get("cm_description", "") or "",
-                    "desc2":     desc2,
-                    "tag_name":  "NA",
-                    "comments":  comments,
-                    "page":      page,
-                    "file_name": file_nm,
+                    "name":       cm_name,
+                    "type":       composition.get("cm_type", "") or "",
+                    "desc1":      composition.get("cm_description", "") or "",
+                    "desc2":      desc2,
+                    "tag_name":   "NA",
+                    "comments":   comments,
+                    "page":       page,
+                    "file_name":  file_nm,
+                    "drw_name":   drw_nm,
+                    "drw_number": drw_num,
                 })
 
             # ── Transmitter row (not multiplied by count) ────────────
             tx_name = composition.get("transmitter", "NA") or "NA"
             if tx_name and tx_name.strip().upper() != "NA":
                 expanded.append({
-                    "name":      tx_name,
-                    "type":      composition.get("tx_type", "") or "",
-                    "desc1":     composition.get("tx_description", "") or "",
-                    "desc2":     desc2,
-                    "tag_name":  "NA",
-                    "comments":  comments,
-                    "page":      page,
-                    "file_name": file_nm,
+                    "name":       tx_name,
+                    "type":       composition.get("tx_type", "") or "",
+                    "desc1":      composition.get("tx_description", "") or "",
+                    "desc2":      desc2,
+                    "tag_name":   "NA",
+                    "comments":   comments,
+                    "page":       page,
+                    "file_name":  file_nm,
+                    "drw_name":   drw_nm,
+                    "drw_number": drw_num,
                 })
 
             # ── Signal rows × count ──────────────────────────────────
@@ -4220,14 +4232,16 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                 }
 
                 row = {
-                    "name":      signal.get("signal_name", ""),
-                    "type":      sig_type,
-                    "desc1":     signal.get("signal_description", ""),
-                    "desc2":     desc2,
-                    "tag_name":  tag_name,
-                    "comments":  comments,
-                    "page":      page,
-                    "file_name": file_nm,
+                    "name":       signal.get("signal_name", ""),
+                    "type":       sig_type,
+                    "desc1":      signal.get("signal_description", ""),
+                    "desc2":      desc2,
+                    "tag_name":   tag_name,
+                    "comments":   comments,
+                    "page":       page,
+                    "file_name":  file_nm,
+                    "drw_name":   drw_nm,
+                    "drw_number": drw_num,
                     **extra_dict,
                 }
                 for _ in range(count):
@@ -4236,14 +4250,16 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
             # ── Plain (non-composition) marker ───────────────────────
             sig_type = (m.get("signal_type") or m.get("type") or "")
             expanded.append({
-                "name":      m.get("type", ""),
-                "type":      sig_type,
-                "desc1":     m.get("description", "") or m.get("comment", ""),
-                "desc2":     "",
-                "tag_name":  m.get("complete_tag") or m.get("base_tag", ""),
-                "comments":  m.get("comment", "") or m.get("signal_comment", ""),
-                "page":      m.get("page", 0),
-                "file_name": m.get("file_name", ""),
+                "name":       m.get("type", ""),
+                "type":       sig_type,
+                "desc1":      m.get("description", "") or m.get("comment", ""),
+                "desc2":      "",
+                "tag_name":   m.get("complete_tag") or m.get("base_tag", ""),
+                "comments":   m.get("comment", "") or m.get("signal_comment", ""),
+                "page":       m.get("page", 0),
+                "file_name":  m.get("file_name", ""),
+                "drw_name":   m.get("drw_name", ""),
+                "drw_number": m.get("drw_number", ""),
             })
 
     return expanded
@@ -4381,10 +4397,10 @@ def export_project_io_list(path: str, project_id: int,
         "Name", "Type", "Description 1",
         "Description 2 (Signal Typical Details)",
         "Tag Name", "Comments",
-        "Technical Drawing Name", "Page Number",
+        "Technical Drawing Name", "Technical Drawing Number", "Page Number",
         "Project Name", "Project Number", "Project Description",
     ]
-    FIXED_WIDTHS = [24, 14, 36, 36, 22, 36, 34, 12, 28, 16, 36]
+    FIXED_WIDTHS = [24, 14, 36, 36, 22, 36, 34, 28, 12, 28, 16, 36]
     EXTRA_WIDTH  = 22
 
     COLS       = FIXED_COLS + extra_headers_seen
@@ -4410,8 +4426,10 @@ def export_project_io_list(path: str, project_id: int,
 
     def _write_row(ws, row_idx: int, r: dict, use_alt: bool):
         fill = alt_fill if use_alt else PatternFill()
-        drawing_name = os.path.splitext(r.get("file_name", ""))[0]
-        page_number  = r.get("page", 0) + 1
+        # Prefer user-supplied Technical Drawing Name; fall back to file name stem
+        drawing_name   = r.get("drw_name", "") or os.path.splitext(r.get("file_name", ""))[0]
+        drawing_number = r.get("drw_number", "")
+        page_number    = r.get("page", 0) + 1
         fixed_values = [
             r.get("name", ""),
             r.get("type", ""),
@@ -4420,6 +4438,7 @@ def export_project_io_list(path: str, project_id: int,
             r.get("tag_name", ""),
             r.get("comments", ""),
             drawing_name,
+            drawing_number,
             page_number,
             meta.get("name", ""),
             meta.get("number", ""),
@@ -4721,6 +4740,12 @@ def _ensure_project_tables(con: sqlite3.Connection) -> None:
             sort_order  INTEGER NOT NULL DEFAULT 0
         )
     """)
+    # Add per-file drawing metadata columns (migration-safe)
+    for _col in ("drw_name", "drw_number"):
+        try:
+            con.execute(f"ALTER TABLE project_files ADD COLUMN {_col} TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
     con.commit()
 
 def db_create_project(name: str, number: str, description: str) -> int:
@@ -4789,10 +4814,35 @@ def db_load_project_files(project_id: int) -> list[dict]:
     with _db_connect() as con:
         _ensure_project_tables(con)
         rows = con.execute(
-            "SELECT id, file_path, file_name FROM project_files "
+            "SELECT id, file_path, file_name, "
+            "COALESCE(drw_name,''), COALESCE(drw_number,'') "
+            "FROM project_files "
             "WHERE project_id=? ORDER BY sort_order, id",
             (project_id,)).fetchall()
-    return [{"id": r[0], "file_path": r[1], "file_name": r[2]} for r in rows]
+    return [{"id": r[0], "file_path": r[1], "file_name": r[2],
+             "drw_name": r[3], "drw_number": r[4]} for r in rows]
+
+
+def db_get_file_metadata(file_id: int) -> dict:
+    """Return per-file drawing metadata (drw_name, drw_number)."""
+    with _db_connect() as con:
+        _ensure_project_tables(con)
+        row = con.execute(
+            "SELECT COALESCE(drw_name,''), COALESCE(drw_number,'') "
+            "FROM project_files WHERE id=?", (file_id,)).fetchone()
+    if row:
+        return {"drw_name": row[0], "drw_number": row[1]}
+    return {"drw_name": "", "drw_number": ""}
+
+
+def db_save_file_metadata(file_id: int, drw_name: str, drw_number: str) -> None:
+    """Persist per-file drawing metadata."""
+    with _db_connect() as con:
+        _ensure_project_tables(con)
+        con.execute(
+            "UPDATE project_files SET drw_name=?, drw_number=? WHERE id=?",
+            (drw_name, drw_number, file_id))
+        con.commit()
 
 def db_find_pdf_in_projects(file_path: str) -> list[dict]:
     """
@@ -5266,18 +5316,26 @@ class SignalCompositionTemplateDialog(QDialog):
         for sig in signals:
             r = self.signals_table.rowCount()
             self.signals_table.insertRow(r)
-            
+
             self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-            self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
+            cb = QComboBox()
+            cb.addItems(_SIGNAL_IO_TYPES)
+            idx = cb.findText(sig.get("signal_type", "").strip())
+            if idx >= 0:
+                cb.setCurrentIndex(idx)
+            self.signals_table.setCellWidget(r, 1, cb)
             self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
-    
+
     def _add_signal_row(self):
         """Add empty signal row."""
         r = self.signals_table.rowCount()
         self.signals_table.insertRow(r)
-        for col in range(3):
-            self.signals_table.setItem(r, col, QTableWidgetItem(""))
-    
+        self.signals_table.setItem(r, 0, QTableWidgetItem(""))
+        cb = QComboBox()
+        cb.addItems(_SIGNAL_IO_TYPES)
+        self.signals_table.setCellWidget(r, 1, cb)
+        self.signals_table.setItem(r, 2, QTableWidgetItem(""))
+
     def _remove_signal_row(self):
         """Remove selected signal row."""
         r = self.signals_table.currentRow()
@@ -5307,7 +5365,9 @@ class SignalCompositionTemplateDialog(QDialog):
         signals = []
         for r in range(self.signals_table.rowCount()):
             sig_name = (self.signals_table.item(r, 0) or QTableWidgetItem()).text().strip()
-            sig_type = (self.signals_table.item(r, 1) or QTableWidgetItem()).text().strip()
+            cb = self.signals_table.cellWidget(r, 1)
+            sig_type = cb.currentText() if isinstance(cb, QComboBox) else (
+                self.signals_table.item(r, 1) or QTableWidgetItem()).text().strip()
             sig_desc = (self.signals_table.item(r, 2) or QTableWidgetItem()).text().strip()
 
             if sig_name and sig_type:
@@ -5757,6 +5817,11 @@ class NoProjectDialog(QDialog):
         self.setLayout(lay)
         
 # ---------------------------------------------------------------------------
+# Allowed IO signal types (used in both config and template dialogs)
+# ---------------------------------------------------------------------------
+_SIGNAL_IO_TYPES = ("HDI", "HDO", "HAI", "HAO", "SDI", "SDO", "SAI", "SAO")
+
+# ---------------------------------------------------------------------------
 # SignalCompositionConfigDialog — manage signal compositions (project-specific)
 # ---------------------------------------------------------------------------
 class SignalCompositionConfigDialog(QDialog):
@@ -5898,7 +5963,8 @@ class SignalCompositionConfigDialog(QDialog):
         # Name cell — editable (plain text; read-only lock comes after load)
         self.cm_name_edit = QTableWidgetItem("NA")
         self.cm_table.setItem(0, 0, self.cm_name_edit)
-        self.cm_type_item = QTableWidgetItem("NA")
+        self.cm_type_item = QTableWidgetItem("CM")
+        self.cm_type_item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # read-only: always "CM"
         self.cm_table.setItem(0, 1, self.cm_type_item)
         self.cm_desc_item = QTableWidgetItem("NA")
         self.cm_table.setItem(0, 2, self.cm_desc_item)
@@ -6102,7 +6168,7 @@ class SignalCompositionConfigDialog(QDialog):
                     self._add_desc_field(dl)
             self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
             self.cm_table.item(0, 0).setText(comp.get("control_module", "NA") or "NA")
-            self.cm_table.item(0, 1).setText(comp.get("cm_type", "NA") or "NA")
+            self.cm_table.item(0, 1).setText("CM")  # always fixed
             self.cm_table.item(0, 2).setText(comp.get("cm_description", "NA") or "NA")
             self.tx_table.item(0, 0).setText(comp.get("transmitter", "NA") or "NA")
             self.tx_table.item(0, 1).setText(comp.get("tx_type", "NA") or "NA")
@@ -6126,7 +6192,7 @@ class SignalCompositionConfigDialog(QDialog):
         self.title_edit.clear()
         self._reset_desc_fields()
         self.cm_table.item(0, 0).setText("NA")
-        self.cm_table.item(0, 1).setText("NA")
+        self.cm_table.item(0, 1).setText("CM")  # always fixed
         self.cm_table.item(0, 2).setText("NA")
         self.tx_table.item(0, 0).setText("NA")
         self.tx_table.item(0, 1).setText("NA")
@@ -6146,9 +6212,13 @@ class SignalCompositionConfigDialog(QDialog):
             for sig in signals:
                 r = self.signals_table.rowCount()
                 self.signals_table.insertRow(r)
-                
+
                 self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-                self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
+                cb = self._make_signal_type_combo(sig["signal_type"])
+                row_ref = r  # capture for lambda
+                cb.currentTextChanged.connect(
+                    lambda _txt, row=row_ref: self._update_resulting_signal_for_row(row))
+                self.signals_table.setCellWidget(r, 1, cb)
                 self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
                 count_item = QTableWidgetItem(str(sig.get("count", 1)))
                 self.signals_table.setItem(r, 3, count_item)
@@ -6167,18 +6237,24 @@ class SignalCompositionConfigDialog(QDialog):
         finally:
             self.signals_table.blockSignals(False)
         self._update_composition_display()
-    
+
     def _add_signal_row(self):
         """Add an empty signal row (fills all fixed and any extra columns)."""
         r = self.signals_table.rowCount()
         self.signals_table.insertRow(r)
         self.signals_table.blockSignals(True)
         try:
-            for col in range(4):  # cols 0-3 editable (name, type, desc, count)
-                self.signals_table.setItem(r, col, QTableWidgetItem(""))
+            self.signals_table.setItem(r, 0, QTableWidgetItem(""))
+            cb = self._make_signal_type_combo()
+            row_ref = r
+            cb.currentTextChanged.connect(
+                lambda _txt, row=row_ref: self._update_resulting_signal_for_row(row))
+            self.signals_table.setCellWidget(r, 1, cb)
+            self.signals_table.setItem(r, 2, QTableWidgetItem(""))
+            self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
             self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
             self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
-            result_item = QTableWidgetItem("")
+            result_item = QTableWidgetItem(cb.currentText())
             result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.signals_table.setItem(r, 6, result_item)
             # Fill any extra columns with empty text
@@ -6186,7 +6262,7 @@ class SignalCompositionConfigDialog(QDialog):
                 self.signals_table.setItem(r, self._FIXED_COL_COUNT + ec, QTableWidgetItem(""))
         finally:
             self.signals_table.blockSignals(False)
-    
+
     def _remove_signal_row(self):
         """Remove the selected signal row."""
         r = self.signals_table.currentRow()
@@ -6199,62 +6275,63 @@ class SignalCompositionConfigDialog(QDialog):
         if count <= 1:
             return signal_type
         return f"{count}{signal_type}"
-    
-    def _update_resulting_signal(self, item: QTableWidgetItem):
-        """Update resulting signal when signal type or count changes."""
-        row = item.row()
-        
-        # Only update if signal_type (col 1) or count (col 3) changed
-        if item.column() in (1, 3):
-            sig_type_item = self.signals_table.item(row, 1)
-            count_item = self.signals_table.item(row, 3)
-            
-            sig_type = (sig_type_item.text() if sig_type_item else "").strip()
-            count_str = (count_item.text() if count_item else "1").strip()
-            
-            try:
-                count = int(count_str) if count_str else 1
-            except ValueError:
-                count = 1
-            
-            resulting = self._calculate_resulting_signal(sig_type, count)
-            result_item = self.signals_table.item(row, 6)  # col 6
-            if result_item:
-                result_item.setText(resulting)
-        
+
+    def _make_signal_type_combo(self, current: str = "") -> "QComboBox":
+        """Return a QComboBox pre-loaded with the 8 allowed IO signal types."""
+        cb = QComboBox()
+        cb.addItems(_SIGNAL_IO_TYPES)
+        idx = cb.findText(current.strip())
+        if idx >= 0:
+            cb.setCurrentIndex(idx)
+        return cb
+
+    def _get_row_signal_type(self, row: int) -> str:
+        """Return the signal type for the given row (combo widget or item text)."""
+        widget = self.signals_table.cellWidget(row, 1)
+        if isinstance(widget, QComboBox):
+            return widget.currentText()
+        item = self.signals_table.item(row, 1)
+        return (item.text() if item else "").strip()
+
+    def _update_resulting_signal_for_row(self, row: int):
+        """Recompute the Resulting Signal cell for *row*."""
+        sig_type  = self._get_row_signal_type(row)
+        count_item = self.signals_table.item(row, 3)
+        count_str  = (count_item.text() if count_item else "1").strip()
+        try:
+            count = int(count_str) if count_str else 1
+        except ValueError:
+            count = 1
+        resulting   = self._calculate_resulting_signal(sig_type, count)
+        result_item = self.signals_table.item(row, 6)
+        if result_item:
+            result_item.setText(resulting)
         self._update_composition_display()
-    
+
+    def _update_resulting_signal(self, item: QTableWidgetItem):
+        """Update resulting signal when count (col 3) changes."""
+        if item.column() == 3:
+            self._update_resulting_signal_for_row(item.row())
+        else:
+            self._update_composition_display()
+
     def _update_composition_display(self):
         """Update the composition display (e.g., "2HDI 1HDO")."""
-        # Count signals by type
-        signal_counts = {}
+        signal_counts: dict[str, int] = {}
         for r in range(self.signals_table.rowCount()):
-            sig_type_item = self.signals_table.item(r, 1)
+            sig_type  = self._get_row_signal_type(r)
             count_item = self.signals_table.item(r, 3)
-            
-            if sig_type_item is None:
-                continue
-            
-            sig_type = (sig_type_item.text() or "").strip()
-            count_str = (count_item.text() if count_item else "1").strip()
-            
+            count_str  = (count_item.text() if count_item else "1").strip()
             if sig_type:
                 try:
                     count = int(count_str) if count_str else 1
                 except ValueError:
                     count = 1
-                
                 signal_counts[sig_type] = signal_counts.get(sig_type, 0) + count
-        
-        # Build composition string
-        parts = []
-        for sig_type in sorted(signal_counts.keys()):
-            count = signal_counts[sig_type]
-            parts.append(f"{count}{sig_type}")
-        
-        composition = " ".join(parts) if parts else ""
-        self.composition_display.setText(composition)
-    
+
+        parts = [f"{signal_counts[t]}{t}" for t in sorted(signal_counts)]
+        self.composition_display.setText(" ".join(parts))
+
     def _new_composition(self):
         """Create a new blank composition."""
         self._clear_form()
@@ -6575,7 +6652,7 @@ class SignalCompositionConfigDialog(QDialog):
             self._clear_form()
             self.title_edit.setText(new_title.strip())
             self._desc_fields[0].setText(template.get("description", ""))
-            
+
             # Populate signals from template
             self.signals_table.blockSignals(True)
             try:
@@ -6583,28 +6660,30 @@ class SignalCompositionConfigDialog(QDialog):
                 for sig in template["signals"]:
                     r = self.signals_table.rowCount()
                     self.signals_table.insertRow(r)
-                    
+
                     self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-                    # Default empty type/description to "NA" so the composition
-                    # passes the mandatory-field validation at save time.
-                    sig_type_val = sig.get("signal_type", "") or "NA"
-                    self.signals_table.setItem(r, 1, QTableWidgetItem(sig_type_val))
+                    sig_type_val = sig.get("signal_type", "") or _SIGNAL_IO_TYPES[0]
+                    cb = self._make_signal_type_combo(sig_type_val)
+                    row_ref = r
+                    cb.currentTextChanged.connect(
+                        lambda _txt, row=row_ref: self._update_resulting_signal_for_row(row))
+                    self.signals_table.setCellWidget(r, 1, cb)
                     sig_desc = sig.get("signal_description", "") or "NA"
                     self.signals_table.setItem(r, 2, QTableWidgetItem(sig_desc))
                     self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
                     self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
                     self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
-                    
-                    resulting = self._calculate_resulting_signal(sig["signal_type"], 1)
+
+                    resulting = self._calculate_resulting_signal(cb.currentText(), 1)
                     result_item = QTableWidgetItem(resulting)
                     result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                     self.signals_table.setItem(r, 6, result_item)
             finally:
                 self.signals_table.blockSignals(False)
-            
+
             self._current_comp_id = None  # Mark as new composition
             self._update_composition_display()
-    
+
     def _on_accept(self):
         """Validate, save changes and close the dialog."""
         if self._do_save():
@@ -6735,7 +6814,7 @@ class SignalCompositionConfigDialog(QDialog):
         signals = []
         for r in range(self.signals_table.rowCount()):
             sig_name = (self.signals_table.item(r, 0) or QTableWidgetItem()).text().strip()
-            sig_type = (self.signals_table.item(r, 1) or QTableWidgetItem()).text().strip()
+            sig_type = self._get_row_signal_type(r)
             sig_desc = (self.signals_table.item(r, 2) or QTableWidgetItem()).text().strip()
             count_str = (self.signals_table.item(r, 3) or QTableWidgetItem()).text().strip()
             prefix = (self.signals_table.item(r, 4) or QTableWidgetItem()).text().strip() or "NA"
@@ -6799,7 +6878,7 @@ class SignalCompositionConfigDialog(QDialog):
             e.text().strip() for e in self._desc_fields if e.text().strip())
         comp_to_update["description"] = description
         comp_to_update["control_module"] = (self.cm_table.item(0, 0).text().strip() or "NA")
-        comp_to_update["cm_type"]        = (self.cm_table.item(0, 1).text().strip() or "NA")
+        comp_to_update["cm_type"]        = "CM"  # always fixed
         comp_to_update["cm_description"] = (self.cm_table.item(0, 2).text().strip() or "NA")
         comp_to_update["transmitter"]    = (self.tx_table.item(0, 0).text().strip() or "NA")
         comp_to_update["tx_type"]        = (self.tx_table.item(0, 1).text().strip() or "NA")
@@ -6864,6 +6943,50 @@ class ProjectMetadataDialog(QDialog):
             "number":      self._num_edit.text().strip(),
             "description": self._desc_edit.toPlainText().strip(),
         }
+
+# ---------------------------------------------------------------------------
+# FileMetadataDialog — edit per-file Technical Drawing metadata
+# ---------------------------------------------------------------------------
+class FileMetadataDialog(QDialog):
+    """Dialog to set Technical Drawing Name and Number for a project file."""
+
+    def __init__(self, file_id: int, file_name: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"File Metadata — {file_name}")
+        self.setMinimumWidth(420)
+        self._file_id = file_id
+
+        meta = db_get_file_metadata(file_id)
+
+        self._name_edit   = QLineEdit(meta.get("drw_name", ""))
+        self._number_edit = QLineEdit(meta.get("drw_number", ""))
+        self._name_edit.setPlaceholderText("e.g. Cooling Water System P&ID")
+        self._number_edit.setPlaceholderText("e.g. DWG-001")
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setVerticalSpacing(8)
+        form.addRow("<b>Technical Drawing Name:</b>",   self._name_edit)
+        form.addRow("<b>Technical Drawing Number:</b>", self._number_edit)
+
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                              QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self._on_accept)
+        bb.rejected.connect(self.reject)
+
+        lay = QVBoxLayout()
+        lay.setContentsMargins(14, 14, 14, 10)
+        lay.addLayout(form)
+        lay.addWidget(bb)
+        self.setLayout(lay)
+
+    def _on_accept(self):
+        db_save_file_metadata(
+            self._file_id,
+            self._name_edit.text().strip(),
+            self._number_edit.text().strip(),
+        )
+        self.accept()
 
 # ---------------------------------------------------------------------------
 # ProjectPanel — the sidebar tree widget
@@ -7410,10 +7533,14 @@ class ProjectPanel(QWidget):
             fid  = item.data(0, self._ROLE_ID)
             path = item.data(0, self._ROLE_PATH)
             missing = item.data(0, self._ROLE_MISSING)
+            fname = item.text(0)
             act_open = menu.addAction("📂   Open in new tab")
             if missing:
                 act_relink = menu.addAction("🔗   Re-link file…")
                 act_relink.triggered.connect(lambda: self._on_relink_file(fid, item))
+            menu.addSeparator()
+            act_meta = menu.addAction("📋   Edit file metadata…")
+            act_meta.triggered.connect(lambda: self._on_edit_file_metadata(fid, fname))
             menu.addSeparator()
             act_remove = menu.addAction("🗑   Remove from project")
             act_open.triggered.connect(lambda: self.open_file_requested.emit(path))
@@ -7633,6 +7760,10 @@ class ProjectPanel(QWidget):
     def _on_remove_file(self, file_id: int):
         db_remove_project_file(file_id)
         self.refresh()
+
+    def _on_edit_file_metadata(self, file_id: int, file_name: str):
+        dlg = FileMetadataDialog(file_id, file_name, parent=self)
+        dlg.exec()
 
     def _on_relink_file(self, file_id: int, item: QTreeWidgetItem):
         path, _ = QFileDialog.getOpenFileName(
