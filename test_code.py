@@ -2043,6 +2043,12 @@ def _db_connect() -> sqlite3.Connection:
                 "ADD COLUMN extra_column_values TEXT NOT NULL DEFAULT '[]'"
             )
             con.commit()
+        if "count" not in existing_sig_cols:
+            con.execute(
+                "ALTER TABLE signal_composition_signals "
+                "ADD COLUMN count INTEGER NOT NULL DEFAULT 1"
+            )
+            con.commit()
     except Exception as e:
         print(f"signal_composition_signals column migration error (non-fatal): {e}")
 
@@ -2072,6 +2078,7 @@ def _db_connect() -> sqlite3.Connection:
             prefix          TEXT    NOT NULL DEFAULT 'NA',
             suffix          TEXT    NOT NULL DEFAULT 'NA',
             extra_column_values TEXT NOT NULL DEFAULT '[]',
+            count           INTEGER NOT NULL DEFAULT 1,
             sort_order      INTEGER NOT NULL DEFAULT 0
         )
     """)
@@ -2786,13 +2793,14 @@ def db_save_signal_composition(title: str, description: str,
             con.execute(
                 "INSERT INTO signal_composition_signals "
                 "(composition_id, signal_name, signal_type, signal_description, "
-                "prefix, suffix, extra_column_values, sort_order) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "prefix, suffix, extra_column_values, count, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
                  sig.get("signal_description", ""),
                  sig.get("prefix") or "NA",
                  sig.get("suffix") or "NA",
                  extra_values_json,
+                 int(sig.get("count", 1) or 1),
                  order))
         
         con.commit()
@@ -2817,7 +2825,7 @@ def db_load_signal_composition(composition_id: int) -> dict:
             "tx_description": str,
             "extra_column_headers": [str, ...],
             "signals": [{"signal_name", "signal_type", "signal_description",
-                         "prefix", "suffix", "extra_column_values": [str, ...]}, ...]
+                         "count", "prefix", "suffix", "extra_column_values": [str, ...]}, ...]
         }
     """
     with _db_connect() as con:
@@ -2833,7 +2841,7 @@ def db_load_signal_composition(composition_id: int) -> dict:
         
         # Load signals
         signals = con.execute(
-            "SELECT signal_name, signal_type, signal_description, prefix, suffix, extra_column_values "
+            "SELECT signal_name, signal_type, signal_description, prefix, suffix, extra_column_values, count "
             "FROM signal_composition_signals WHERE composition_id = ? "
             "ORDER BY sort_order",
             (composition_id,)).fetchall()
@@ -2858,6 +2866,7 @@ def db_load_signal_composition(composition_id: int) -> dict:
                 "prefix": s[3] or "NA",
                 "suffix": s[4] or "NA",
                 "extra_column_values": json.loads(s[5] or "[]"),
+                "count": int(s[6] or 1),
             }
             for s in signals
         ]
@@ -2898,7 +2907,7 @@ def db_load_compositions_by_owner(owner_id: int) -> list[dict]:
         placeholders = ",".join("?" for _ in comp_ids)
         sig_rows = con.execute(
             f"SELECT composition_id, signal_name, signal_type, signal_description, "
-            f"prefix, suffix, extra_column_values "
+            f"prefix, suffix, extra_column_values, count "
             f"FROM signal_composition_signals "
             f"WHERE composition_id IN ({placeholders}) "
             f"ORDER BY composition_id, sort_order",
@@ -2914,6 +2923,7 @@ def db_load_compositions_by_owner(owner_id: int) -> list[dict]:
             "prefix": s[4] or "NA",
             "suffix": s[5] or "NA",
             "extra_column_values": json.loads(s[6] or "[]"),
+            "count": int(s[7] or 1),
         })
 
     return [
@@ -3051,13 +3061,14 @@ def db_update_signal_composition(composition_id: int, title: str,
             con.execute(
                 "INSERT INTO signal_composition_signals "
                 "(composition_id, signal_name, signal_type, signal_description, "
-                "prefix, suffix, extra_column_values, sort_order) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "prefix, suffix, extra_column_values, count, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
                  sig.get("signal_description", ""),
                  sig.get("prefix") or "NA",
                  sig.get("suffix") or "NA",
                  extra_values_json,
+                 int(sig.get("count", 1) or 1),
                  order))
         
         con.commit()
