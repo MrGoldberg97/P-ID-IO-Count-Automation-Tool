@@ -24,9 +24,23 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QTimer
 from PySide6.QtGui import (QPainter, QColor, QPen, QPainterPath, QBrush,
-                            QAction, QKeySequence, QActionGroup, QFont, QPalette)
+                            QAction, QKeySequence, QActionGroup, QFont, QPalette,
+                            QIcon, QPixmap)
 from PySide6.QtPdf import QPdfDocument
 from PySide6.QtPdfWidgets import QPdfView
+
+# ---------------------------------------------------------------------------
+# Resource path helper (works both when running from source and as a
+# PyInstaller one-file executable).
+# ---------------------------------------------------------------------------
+def resource_path(relative: str) -> str:
+    """Return the absolute path to *relative*, resolving against the PyInstaller
+    temporary extraction directory (sys._MEIPASS) when running as a frozen
+    executable, or against the directory that contains this source file when
+    running normally."""
+    base = getattr(sys, "_MEIPASS",
+                   os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -8124,6 +8138,11 @@ class PDFViewer(QMainWindow):
         self.setWindowTitle("Technical Drawing Viewer")
         self.resize(1280, 900)
 
+        # Set the application / taskbar icon from the bundled logo
+        _icon_path = resource_path("logo.png")
+        if os.path.isfile(_icon_path):
+            self.setWindowIcon(QIcon(_icon_path))
+
         # ── Resolve saved theme (applied after _build_ui so toolbar exists) ─
         self._current_theme = db_load_theme()
 
@@ -8586,7 +8605,7 @@ class PDFViewer(QMainWindow):
     def _build_home_screen(self) -> QWidget:
         # ── Edit these lines ──────────────────────────────────────────────
         APP_VERSION = "v1.0.0"
-        LOGO_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
+        LOGO_PATH   = resource_path("logo.png")
         LOGO_WIDTH  = 180
 
         self._app_version = APP_VERSION
@@ -8619,7 +8638,6 @@ class PDFViewer(QMainWindow):
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if os.path.isfile(LOGO_PATH):
-            from PySide6.QtGui import QPixmap
             pix = QPixmap(LOGO_PATH)
             logo_label.setPixmap(
                 pix.scaledToWidth(LOGO_WIDTH, Qt.TransformationMode.SmoothTransformation))
@@ -9685,6 +9703,10 @@ if __name__ == "__main__":
     # widgets are created.
     from PySide6.QtGui import QFont as _AppFont
     app.setFont(_AppFont("Montserrat", 9))
+    # Set application icon (taskbar, alt-tab, window chrome)
+    _app_icon_path = resource_path("logo.png")
+    if os.path.isfile(_app_icon_path):
+        app.setWindowIcon(QIcon(_app_icon_path))
     viewer = PDFViewer()
     viewer.show()
     sys.exit(app.exec())

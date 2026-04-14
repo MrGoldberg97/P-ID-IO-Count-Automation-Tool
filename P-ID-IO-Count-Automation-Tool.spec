@@ -14,6 +14,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # Collect PySide6 Qt platform plugins and other data files that PyInstaller
 # sometimes misses with the automatic analysis.
 datas = []
+datas += [("logo.png", ".")]          # embed logo for home screen & window icon
 datas += collect_data_files("PySide6", includes=["*.dll", "*.so", "plugins/**/*"])
 datas += collect_data_files("pypdf")
 datas += collect_data_files("openpyxl")
@@ -58,4 +59,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="logo.png",
 )
