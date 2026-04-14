@@ -3136,13 +3136,14 @@ def _get_signal_composition(obj: dict) -> str:
     Returns:
         String like "2HDI 1HDO" or "1AI 1AO"
     """
-    # Count signals by type
+    # Count signals by type, respecting each signal's count field
     signal_counts = {}
     for sig in obj.get("signals", []):
         # Signals are stored with "signal_type" field in the database
         sig_type = sig.get("signal_type", "")
         if sig_type:
-            signal_counts[sig_type] = signal_counts.get(sig_type, 0) + 1
+            sig_count = int(sig.get("count", 1) or 1)
+            signal_counts[sig_type] = signal_counts.get(sig_type, 0) + sig_count
     
     # Sort by type name for consistent display
     composition_parts = []
@@ -4146,11 +4147,13 @@ def _get_signal_composition(complex_obj: dict) -> str:
     Returns:
         String like "2HDI 1HDO" or "1AI 1AO"
     """
-    # Count signals by type
+    # Count signals by type, respecting each signal's count field
     signal_counts = {}
     for sig in complex_obj.get("signals", []):
         sig_type = sig.get("signal_type", "")  # e.g., "HDI", "HDO", "AI", "AO"
-        signal_counts[sig_type] = signal_counts.get(sig_type, 0) + 1
+        if sig_type:
+            sig_count = int(sig.get("count", 1) or 1)
+            signal_counts[sig_type] = signal_counts.get(sig_type, 0) + sig_count
     
     # Sort by type name for consistent display
     composition_parts = []
