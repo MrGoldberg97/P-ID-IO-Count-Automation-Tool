@@ -174,26 +174,50 @@ _LIGHT_THEME_SS = """
 _DARK_TOOLBAR_SS = """
     QToolBar { background: #252525; border-bottom: 1px solid #3A3A3A;
                padding: 2px 4px; spacing: 2px; }
-    QToolButton { background: transparent; color: #CCCCCC;
-                  border: 1px solid transparent; border-radius: 4px;
-                  padding: 3px 8px; font-size: 9pt; min-width: 44px; }
-    QToolButton:hover { background: #3A3A3A; border: 1px solid #555555; color: #FFFFFF; }
-    QToolButton:pressed { background: #2A2A2A; }
-    QToolButton:checked { background: #1A3A5C; border: 1px solid #3D5A80; color: #7EC8F0; }
-    QToolButton:disabled { color: #555555; }
+    QToolButton { background: #3A3A3A; color: #CCCCCC;
+                  border-top: 2px solid #555555; border-left: 2px solid #555555;
+                  border-bottom: 2px solid #1A1A1A; border-right: 2px solid #1A1A1A;
+                  border-radius: 4px;
+                  padding: 3px 8px 4px 8px; font-size: 9pt; min-width: 44px; }
+    QToolButton:hover { background: #4A4A4A; color: #FFFFFF;
+                        border-top: 2px solid #6A6A6A; border-left: 2px solid #6A6A6A;
+                        border-bottom: 2px solid #202020; border-right: 2px solid #202020; }
+    QToolButton:pressed { background: #222222; color: #BBBBBB;
+                          border-top: 2px solid #1A1A1A; border-left: 2px solid #1A1A1A;
+                          border-bottom: 2px solid #555555; border-right: 2px solid #555555;
+                          padding: 4px 7px 3px 9px; }
+    QToolButton:checked { background: #1A3A5C;
+                          border-top: 2px solid #1A1A1A; border-left: 2px solid #1A1A1A;
+                          border-bottom: 2px solid #3D5A80; border-right: 2px solid #3D5A80;
+                          color: #7EC8F0; }
+    QToolButton:disabled { background: #2A2A2A; color: #505050;
+                           border-top: 2px solid #383838; border-left: 2px solid #383838;
+                           border-bottom: 2px solid #181818; border-right: 2px solid #181818; }
     QToolBar::separator { background: #3A3A3A; width: 1px; margin: 4px 6px; }
 """
 
 _LIGHT_TOOLBAR_SS = """
     QToolBar { background: #E8E8E8; border-bottom: 1px solid #CCCCCC;
                padding: 2px 4px; spacing: 2px; }
-    QToolButton { background: transparent; color: #333333;
-                  border: 1px solid transparent; border-radius: 4px;
-                  padding: 3px 8px; font-size: 9pt; min-width: 44px; }
-    QToolButton:hover { background: #D8D8D8; border: 1px solid #AAAAAA; color: #000000; }
-    QToolButton:pressed { background: #C8C8C8; }
-    QToolButton:checked { background: #C8DCEC; border: 1px solid #3D5A80; color: #1A3A5C; }
-    QToolButton:disabled { color: #AAAAAA; }
+    QToolButton { background: #F0F0F0; color: #333333;
+                  border-top: 2px solid #FFFFFF; border-left: 2px solid #FFFFFF;
+                  border-bottom: 2px solid #999999; border-right: 2px solid #999999;
+                  border-radius: 4px;
+                  padding: 3px 8px 4px 8px; font-size: 9pt; min-width: 44px; }
+    QToolButton:hover { background: #E0E8F8; color: #000000;
+                        border-top: 2px solid #FFFFFF; border-left: 2px solid #FFFFFF;
+                        border-bottom: 2px solid #7A9ABB; border-right: 2px solid #7A9ABB; }
+    QToolButton:pressed { background: #C8C8C8; color: #222222;
+                          border-top: 2px solid #999999; border-left: 2px solid #999999;
+                          border-bottom: 2px solid #EEEEEE; border-right: 2px solid #EEEEEE;
+                          padding: 4px 7px 3px 9px; }
+    QToolButton:checked { background: #C8DCEC;
+                          border-top: 2px solid #999999; border-left: 2px solid #999999;
+                          border-bottom: 2px solid #3D5A80; border-right: 2px solid #3D5A80;
+                          color: #1A3A5C; }
+    QToolButton:disabled { background: #E0E0E0; color: #AAAAAA;
+                           border-top: 2px solid #EBEBEB; border-left: 2px solid #EBEBEB;
+                           border-bottom: 2px solid #BBBBBB; border-right: 2px solid #BBBBBB; }
     QToolBar::separator { background: #CCCCCC; width: 1px; margin: 4px 6px; }
 """
 
@@ -8402,7 +8426,7 @@ class PDFViewer(QMainWindow):
 
     def _set_pdf_actions_enabled(self, enabled: bool):
         for act in (self.act_close_pdf, self.act_save_fdf, self.act_save_pdf,
-                    self.act_link_session,
+                    self.act_link_session, self.act_export_xlsx,
                     self.act_zoom_in, self.act_zoom_out, self.act_zoom_fit,
                     self.act_prev_page, self.act_next_page):
             act.setEnabled(enabled)
