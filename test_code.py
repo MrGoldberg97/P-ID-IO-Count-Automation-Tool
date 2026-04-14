@@ -8356,7 +8356,7 @@ class PDFViewer(QMainWindow):
         else:  # system
             app.setStyleSheet("")
             if hasattr(self, "_toolbar"):
-                self._toolbar.setStyleSheet("")
+                self._toolbar.setStyleSheet(_LIGHT_TOOLBAR_SS)
             if hasattr(self, "_project_dock"):
                 self._project_dock.setStyleSheet("")
         if _persist:
