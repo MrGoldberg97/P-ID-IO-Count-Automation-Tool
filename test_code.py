@@ -6317,9 +6317,8 @@ class SignalCompositionConfigDialog(QDialog):
 
                 self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
                 cb = self._make_signal_type_combo(sig["signal_type"])
-                row_ref = r  # capture for lambda
                 cb.currentTextChanged.connect(
-                    lambda _txt, row=row_ref: self._update_resulting_signal_for_row(row))
+                    lambda _txt, c=cb: self._update_resulting_signal_for_combo(c))
                 self.signals_table.setCellWidget(r, 1, cb)
                 self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
                 count_item = QTableWidgetItem(str(sig.get("count", 1)))
@@ -6348,9 +6347,8 @@ class SignalCompositionConfigDialog(QDialog):
         try:
             self.signals_table.setItem(r, 0, QTableWidgetItem(""))
             cb = self._make_signal_type_combo()
-            row_ref = r
             cb.currentTextChanged.connect(
-                lambda _txt, row=row_ref: self._update_resulting_signal_for_row(row))
+                lambda _txt, c=cb: self._update_resulting_signal_for_combo(c))
             self.signals_table.setCellWidget(r, 1, cb)
             self.signals_table.setItem(r, 2, QTableWidgetItem(""))
             self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
@@ -6394,6 +6392,13 @@ class SignalCompositionConfigDialog(QDialog):
             return widget.currentText()
         item = self.signals_table.item(row, 1)
         return (item.text() if item else "").strip()
+
+    def _update_resulting_signal_for_combo(self, combo: "QComboBox"):
+        """Find the current row of *combo* and recompute its Resulting Signal cell."""
+        for r in range(self.signals_table.rowCount()):
+            if self.signals_table.cellWidget(r, 1) is combo:
+                self._update_resulting_signal_for_row(r)
+                return
 
     def _update_resulting_signal_for_row(self, row: int):
         """Recompute the Resulting Signal cell for *row*."""
@@ -6766,9 +6771,8 @@ class SignalCompositionConfigDialog(QDialog):
                     self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
                     sig_type_val = sig.get("signal_type", "") or _SIGNAL_IO_TYPES[0]
                     cb = self._make_signal_type_combo(sig_type_val)
-                    row_ref = r
                     cb.currentTextChanged.connect(
-                        lambda _txt, row=row_ref: self._update_resulting_signal_for_row(row))
+                        lambda _txt, c=cb: self._update_resulting_signal_for_combo(c))
                     self.signals_table.setCellWidget(r, 1, cb)
                     sig_desc = sig.get("signal_description", "") or "NA"
                     self.signals_table.setItem(r, 2, QTableWidgetItem(sig_desc))
