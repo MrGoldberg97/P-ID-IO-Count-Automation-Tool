@@ -4423,7 +4423,7 @@ def export_project_io_list(path: str, project_id: int,
     Export IO signal markers to a single Excel sheet.
 
     Columns: Name | Type | Description 1 | Description 2 (Signal Typical Details)
-             | Tag Name | Comments | Technical Drawing Name | Page Number
+             | Tag Name | Comments | Technical Drawing Number | Page Number
              | Project Name | Project Number | Project Description
              | [extra signal columns from Signal Typical config...]
 
@@ -4454,7 +4454,7 @@ def export_project_io_list(path: str, project_id: int,
         "Name", "Type", "Description 1",
         "Description 2 (Signal Typical Details)",
         "Tag Name", "Comments",
-        "Technical Drawing Name", "Technical Drawing Number", "Page Number",
+        "Technical Drawing Number", "Technical Drawing Description", "Page Number",
         "Project Name", "Project Number", "Project Description",
     ]
     FIXED_WIDTHS = [24, 14, 36, 36, 22, 36, 34, 28, 12, 28, 16, 36]
@@ -7083,7 +7083,7 @@ class ProjectMetadataDialog(QDialog):
 # FileMetadataDialog — edit per-file Technical Drawing metadata
 # ---------------------------------------------------------------------------
 class FileMetadataDialog(QDialog):
-    """Dialog to set Technical Drawing Name and Number for a project file."""
+    """Dialog to set Technical Drawing Number and Description for a project file."""
 
     def __init__(self, file_id: int, file_name: str, parent=None):
         super().__init__(parent)
@@ -7093,16 +7093,18 @@ class FileMetadataDialog(QDialog):
 
         meta = db_get_file_metadata(file_id)
 
-        self._name_edit   = QLineEdit(meta.get("drw_name", ""))
+        # Default the drawing number to the PDF filename (without extension)
+        default_number = meta.get("drw_name", "") or os.path.splitext(file_name)[0]
+        self._name_edit   = QLineEdit(default_number)
         self._number_edit = QLineEdit(meta.get("drw_number", ""))
-        self._name_edit.setPlaceholderText("e.g. Cooling Water System P&ID")
-        self._number_edit.setPlaceholderText("e.g. DWG-001")
+        self._name_edit.setPlaceholderText("e.g. DWG-001")
+        self._number_edit.setPlaceholderText("e.g. Cooling Water System P&ID")
 
         form = QFormLayout()
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         form.setVerticalSpacing(8)
-        form.addRow("<b>Technical Drawing Name:</b>",   self._name_edit)
-        form.addRow("<b>Technical Drawing Number:</b>", self._number_edit)
+        form.addRow("<b>Technical Drawing Number:</b>", self._name_edit)
+        form.addRow("<b>Technical Drawing Description:</b>", self._number_edit)
 
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
                               QDialogButtonBox.StandardButton.Cancel)
@@ -9129,10 +9131,45 @@ class PDFViewer(QMainWindow):
         owner_id = db_get_or_create_project_owner(project_id)
         
         comp_dlg = SignalCompositionConfigDialog(owner_id, project_name, parent=self)
-        if comp_dlg.exec() == QDialog.DialogCode.Accepted:
+        comp_dlg.exec()
+        # Refresh all open tab overlays so marker labels reflect any changes
+        self._refresh_composition_markers()
+        if comp_dlg.result() == QDialog.DialogCode.Accepted:
             self.statusBar().showMessage(
                 f"Signal typicals configured for '{project_name}'")
         
+    def _refresh_composition_markers(self) -> None:
+        """Re-calculate the display label for every composition marker in all
+        open tabs and repaint their overlays.  Called after the signal typical
+        config dialog closes so that label changes are visible immediately."""
+        for idx in range(self._tabs.count()):
+            ts = self._tab_state_at(idx)
+            if ts is None:
+                continue
+            changed = False
+            for m in ts.io_list:
+                if not m.get("is_composition") or not m.get("composition_id"):
+                    continue
+                comp = db_load_signal_composition(m["composition_id"])
+                if not comp:
+                    continue
+                tag_parts  = m.get("tag_parts") or {}
+                new_count  = int(tag_parts.get("count", m.get("count", 1)) or 1)
+                signal_counts: dict[str, int] = {}
+                for sig in comp.get("signals", []):
+                    sig_type = sig.get("signal_type", "")
+                    if sig_type:
+                        sig_count = int(sig.get("count", 1) or 1)
+                        signal_counts[sig_type] = (
+                            signal_counts.get(sig_type, 0) + sig_count * new_count)
+                parts = [f"{c}{t}" for t, c in sorted(signal_counts.items())]
+                new_label = " ".join(parts) if parts else comp["title"]
+                if m.get("type") != new_label:
+                    m["type"] = new_label
+                    changed = True
+            if changed:
+                ts.pdf_view._overlay.update()
+
     def open_export_config(self):
         current = db_load_export_columns()
         dlg = ExportColumnConfigDialog(current, parent=self)
