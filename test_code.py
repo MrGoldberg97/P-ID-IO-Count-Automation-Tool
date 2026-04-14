@@ -278,7 +278,7 @@ class MarkerEditDialog(QDialog):
     """
     Opens when a marker is right-click -> Edit.
     Shows the full Signal Typical details; all fields are editable except
-    Control Module Name, Transmitter Name, Signal Name column, Type column.
+    Control Module Name, Field Device Name, Signal Name column, Type column.
     The count (multiplier) spinner is NOT shown.
     Any extra columns defined in the Signal Typical configuration are
     displayed and editable here too.
@@ -352,8 +352,8 @@ class MarkerEditDialog(QDialog):
         desc_row.addWidget(self.desc_edit)
         lay.addLayout(desc_row)
 
-        # Control Module + Transmitter side by side
-        cm_tx_lay = QHBoxLayout()
+        # Control Module + Field Device side by side
+        cm_fd_lay = QHBoxLayout()
 
         cm_group = QGroupBox("Control Module")
         cm_group.setStyleSheet(
@@ -372,27 +372,27 @@ class MarkerEditDialog(QDialog):
             tag_parts.get("cm_description", comp.get("cm_description", "NA") or "NA"))
         cm_form.addRow("Type:", self.cm_type_edit)
         cm_form.addRow("Description:", self.cm_desc_edit)
-        cm_tx_lay.addWidget(cm_group)
+        cm_fd_lay.addWidget(cm_group)
 
-        tx_group = QGroupBox("Transmitter")
-        tx_group.setStyleSheet(
+        fd_group = QGroupBox("Field Device")
+        fd_group.setStyleSheet(
             "QGroupBox{border:1px solid #555;border-radius:4px;margin-top:6px;"
             "color:#F0F0F0;font-weight:bold;}"
             "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}")
-        tx_form = QFormLayout(tx_group)
-        tx_form.setContentsMargins(8, 8, 8, 4)
-        tx_form.setSpacing(4)
-        _tx_name_lbl = QLabel(comp.get("transmitter", "NA") or "NA")
-        _tx_name_lbl.setStyleSheet("color:#AAAAAA;")
-        tx_form.addRow("Name:", _tx_name_lbl)
-        self.tx_type_edit = QLineEdit(
-            tag_parts.get("tx_type", comp.get("tx_type", "NA") or "NA"))
-        self.tx_desc_edit = QLineEdit(
-            tag_parts.get("tx_description", comp.get("tx_description", "NA") or "NA"))
-        tx_form.addRow("Type:", self.tx_type_edit)
-        tx_form.addRow("Description:", self.tx_desc_edit)
-        cm_tx_lay.addWidget(tx_group)
-        lay.addLayout(cm_tx_lay)
+        fd_form = QFormLayout(fd_group)
+        fd_form.setContentsMargins(8, 8, 8, 4)
+        fd_form.setSpacing(4)
+        _fd_name_lbl = QLabel(comp.get("field_device", "NA") or "NA")
+        _fd_name_lbl.setStyleSheet("color:#AAAAAA;")
+        fd_form.addRow("Name:", _fd_name_lbl)
+        self.fd_type_edit = QLineEdit(
+            tag_parts.get("fd_type", comp.get("fd_type", "NA") or "NA"))
+        self.fd_desc_edit = QLineEdit(
+            tag_parts.get("fd_description", comp.get("fd_description", "NA") or "NA"))
+        fd_form.addRow("Type:", self.fd_type_edit)
+        fd_form.addRow("Description:", self.fd_desc_edit)
+        cm_fd_lay.addWidget(fd_group)
+        lay.addLayout(cm_fd_lay)
 
         # Signals table — mirrors SignalCompositionConfigDialog layout
         extra_headers = comp.get("extra_column_headers", [])
@@ -476,8 +476,8 @@ class MarkerEditDialog(QDialog):
             "description":    self.desc_edit.text().strip(),
             "cm_type":        self.cm_type_edit.text().strip(),
             "cm_description": self.cm_desc_edit.text().strip(),
-            "tx_type":        self.tx_type_edit.text().strip(),
-            "tx_description": self.tx_desc_edit.text().strip(),
+            "fd_type":        self.fd_type_edit.text().strip(),
+            "fd_description": self.fd_desc_edit.text().strip(),
             "signal_overrides": overrides,
         }
 
@@ -1914,7 +1914,7 @@ def _db_connect() -> sqlite3.Connection:
                             title           TEXT    NOT NULL,
                             description     TEXT    NOT NULL DEFAULT '',
                             control_module  TEXT    NOT NULL DEFAULT 'NA',
-                            transmitter     TEXT    NOT NULL DEFAULT 'NA',
+                            field_device    TEXT    NOT NULL DEFAULT 'NA',
                             created         TEXT    NOT NULL,
                             modified        TEXT    NOT NULL
                         )
@@ -1971,7 +1971,7 @@ def _db_connect() -> sqlite3.Connection:
                     title           TEXT    NOT NULL,
                     description     TEXT    NOT NULL DEFAULT '',
                     control_module  TEXT    NOT NULL DEFAULT 'NA',
-                    transmitter     TEXT    NOT NULL DEFAULT 'NA',
+                    field_device    TEXT    NOT NULL DEFAULT 'NA',
                     created         TEXT    NOT NULL,
                     modified        TEXT    NOT NULL
                 )
@@ -1984,7 +1984,7 @@ def _db_connect() -> sqlite3.Connection:
                 title           TEXT    NOT NULL,
                 description     TEXT    NOT NULL DEFAULT '',
                 control_module  TEXT    NOT NULL DEFAULT 'NA',
-                transmitter     TEXT    NOT NULL DEFAULT 'NA',
+                field     TEXT    NOT NULL DEFAULT 'NA',
                 created         TEXT    NOT NULL,
                 modified        TEXT    NOT NULL
             )
@@ -2001,7 +2001,7 @@ def _db_connect() -> sqlite3.Connection:
     except:
         pass
 
-    # ── Migrate signal_compositions: add control_module / transmitter / extended columns ──
+    # ── Migrate signal_compositions: add control_module / field_device / extended columns ──
     try:
         existing_cols = [
             row[1]
@@ -2013,18 +2013,18 @@ def _db_connect() -> sqlite3.Connection:
                 "ADD COLUMN control_module TEXT NOT NULL DEFAULT 'NA'"
             )
             con.commit()
-        if "transmitter" not in existing_cols:
+        if "field_device" not in existing_cols:
             con.execute(
                 "ALTER TABLE signal_compositions "
-                "ADD COLUMN transmitter TEXT NOT NULL DEFAULT 'NA'"
+                "ADD COLUMN field_device TEXT NOT NULL DEFAULT 'NA'"
             )
             con.commit()
-        # Extended fields: control module type/description, transmitter type/description
+        # Extended fields: control module type/description, field device type/description
         for col_def in (
             ("cm_type",        "TEXT NOT NULL DEFAULT 'NA'"),
             ("cm_description", "TEXT NOT NULL DEFAULT 'NA'"),
-            ("tx_type",        "TEXT NOT NULL DEFAULT 'NA'"),
-            ("tx_description", "TEXT NOT NULL DEFAULT 'NA'"),
+            ("fd_type",        "TEXT NOT NULL DEFAULT 'NA'"),
+            ("fd_description", "TEXT NOT NULL DEFAULT 'NA'"),
             ("category",       "TEXT NOT NULL DEFAULT ''"),
         ):
             if col_def[0] not in existing_cols:
@@ -2774,12 +2774,12 @@ def db_get_or_create_project_owner(project_id: int) -> int:
 def db_save_signal_composition(title: str, description: str,
                               signals: list[dict],
                               control_module: str = "NA",
-                              transmitter: str = "NA",
+                              field_device: str = "NA",
                               extra_column_headers: list = None,
                               cm_type: str = "NA",
                               cm_description: str = "NA",
-                              tx_type: str = "NA",
-                              tx_description: str = "NA",
+                              fd_type: str = "NA",
+                              fd_description: str = "NA",
                               category: str = "") -> int:
     """
     Save a new signal composition.
@@ -2792,13 +2792,13 @@ def db_save_signal_composition(title: str, description: str,
         # Insert composition
         cur = con.execute(
             "INSERT INTO signal_compositions "
-            "(title, description, control_module, transmitter, extra_column_headers, "
-            "cm_type, cm_description, tx_type, tx_description, category, created, modified) "
+            "(title, description, control_module, field_device, extra_column_headers, "
+            "cm_type, cm_description, fd_type, fd_description, category, created, modified) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (title, description or "", control_module or "NA",
-             transmitter or "NA", extra_headers_json,
+             field_device or "NA", extra_headers_json,
              cm_type or "NA", cm_description or "NA",
-             tx_type or "NA", tx_description or "NA",
+             fd_type or "NA", fd_description or "NA",
              category or "",
              now, now))
         composition_id = cur.lastrowid
@@ -2836,9 +2836,9 @@ def db_load_signal_composition(composition_id: int) -> dict:
             "control_module": str,   # cm_name
             "cm_type": str,
             "cm_description": str,
-            "transmitter": str,      # tx_name
-            "tx_type": str,
-            "tx_description": str,
+            "field_device": str,      # fd_name
+            "fd_type": str,
+            "fd_description": str,
             "extra_column_headers": [str, ...],
             "signals": [{"signal_name", "signal_type", "signal_description",
                          "count", "prefix", "suffix", "extra_column_values": [str, ...]}, ...]
@@ -2847,8 +2847,8 @@ def db_load_signal_composition(composition_id: int) -> dict:
     with _db_connect() as con:
         # Load composition
         comp = con.execute(
-            "SELECT id, title, description, control_module, transmitter, extra_column_headers, "
-            "cm_type, cm_description, tx_type, tx_description, category "
+            "SELECT id, title, description, control_module, field_device, extra_column_headers, "
+            "cm_type, cm_description, fd_type, fd_description, category "
             "FROM signal_compositions WHERE id = ?",
             (composition_id,)).fetchone()
         
@@ -2867,12 +2867,12 @@ def db_load_signal_composition(composition_id: int) -> dict:
         "title": comp[1],
         "description": comp[2] or "",
         "control_module": comp[3] or "NA",
-        "transmitter": comp[4] or "NA",
+        "field_device": comp[4] or "NA",
         "extra_column_headers": json.loads(comp[5] or "[]"),
         "cm_type": comp[6] or "NA",
         "cm_description": comp[7] or "NA",
-        "tx_type": comp[8] or "NA",
-        "tx_description": comp[9] or "NA",
+        "fd_type": comp[8] or "NA",
+        "fd_description": comp[9] or "NA",
         "category": comp[10] or "",
         "signals": [
             {
@@ -2906,9 +2906,9 @@ def db_load_compositions_by_owner(owner_id: int) -> list[dict]:
     with _db_connect() as con:
         # Load all compositions for this owner in one query
         rows = con.execute(
-            "SELECT sc.id, sc.title, sc.description, sc.control_module, sc.transmitter, "
-            "sc.extra_column_headers, sc.cm_type, sc.cm_description, sc.tx_type, "
-            "sc.tx_description, sc.category "
+            "SELECT sc.id, sc.title, sc.description, sc.control_module, sc.field_device, "
+            "sc.extra_column_headers, sc.cm_type, sc.cm_description, sc.fd_type, "
+            "sc.fd_description, sc.category "
             "FROM signal_compositions sc "
             "JOIN composition_ownership co ON co.composition_id = sc.id "
             "WHERE co.owner_id = ? "
@@ -2948,12 +2948,12 @@ def db_load_compositions_by_owner(owner_id: int) -> list[dict]:
             "title": r[1],
             "description": r[2] or "",
             "control_module": r[3] or "NA",
-            "transmitter": r[4] or "NA",
+            "field_device": r[4] or "NA",
             "extra_column_headers": json.loads(r[5] or "[]"),
             "cm_type": r[6] or "NA",
             "cm_description": r[7] or "NA",
-            "tx_type": r[8] or "NA",
-            "tx_description": r[9] or "NA",
+            "fd_type": r[8] or "NA",
+            "fd_description": r[9] or "NA",
             "category": r[10] or "",
             "signals": signals_by_comp.get(r[0], []),
         }
@@ -3037,12 +3037,12 @@ def db_delete_signal_composition(composition_id: int) -> None:
 def db_update_signal_composition(composition_id: int, title: str,
                                 description: str, signals: list[dict],
                                 control_module: str = "NA",
-                                transmitter: str = "NA",
+                                field_device: str = "NA",
                                 extra_column_headers: list = None,
                                 cm_type: str = "NA",
                                 cm_description: str = "NA",
-                                tx_type: str = "NA",
-                                tx_description: str = "NA",
+                                fd_type: str = "NA",
+                                fd_description: str = "NA",
                                 category: str = "") -> None:
     """
     Update an existing signal composition.
@@ -3055,14 +3055,14 @@ def db_update_signal_composition(composition_id: int, title: str,
         # Update composition header
         con.execute(
             "UPDATE signal_compositions "
-            "SET title = ?, description = ?, control_module = ?, transmitter = ?, "
+            "SET title = ?, description = ?, control_module = ?, field_device = ?, "
             "extra_column_headers = ?, cm_type = ?, cm_description = ?, "
-            "tx_type = ?, tx_description = ?, category = ?, modified = ? "
+            "fd_type = ?, fd_description = ?, category = ?, modified = ? "
             "WHERE id = ?",
             (title, description or "", control_module or "NA",
-             transmitter or "NA", extra_headers_json,
+             field_device or "NA", extra_headers_json,
              cm_type or "NA", cm_description or "NA",
-             tx_type or "NA", tx_description or "NA",
+             fd_type or "NA", fd_description or "NA",
              category or "",
              now, composition_id))
         
@@ -4192,7 +4192,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
 
     For composition markers the output is:
         1. One row for the Control Module (if present, i.e. not "NA")
-        2. One row for the Transmitter   (if present, i.e. not "NA")
+        2. One row for the Field Device   (if present, i.e. not "NA")
         3. One row per signal × marker count
            (e.g. composition "2HDI 1HDO" placed with count=2 → 4 HDI + 2 HDO rows)
 
@@ -4200,7 +4200,7 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
     Configuration menu) and is repeated on every row of the same composition.
     Comments is the composition description and is also repeated.
     Tag Name for signals is  (prefix or "NA")-(signal_type)-(suffix or "NA").
-    Tag Name for CM/TX rows is always "NA".
+    Tag Name for CM/FD rows is always "NA".
 
     For plain (non-composition) markers a single row is produced using the
     marker's own type / comment / description.
@@ -4250,13 +4250,13 @@ def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
                     "drw_number": drw_num,
                 })
 
-            # ── Transmitter row (not multiplied by count) ────────────
-            tx_name = composition.get("transmitter", "NA") or "NA"
-            if tx_name and tx_name.strip().upper() != "NA":
+            # ── Field Device row (not multiplied by count) ────────────
+            fd_name = composition.get("field_device", "NA") or "NA"
+            if fd_name and fd_name.strip().upper() != "NA":
                 expanded.append({
-                    "name":       tx_name,
-                    "type":       tag_parts.get("tx_type") or composition.get("tx_type", "") or "",
-                    "desc1":      tag_parts.get("tx_description") or composition.get("tx_description", "") or "",
+                    "name":       fd_name,
+                    "type":       tag_parts.get("fd_type") or composition.get("fd_type", "") or "",
+                    "desc1":      tag_parts.get("fd_description") or composition.get("fd_description", "") or "",
                     "desc2":      desc2,
                     "tag_name":   "NA",
                     "comments":   comments,
@@ -4334,7 +4334,7 @@ def export_to_excel(path: str, pdf_path: str,
 
     Composition markers are expanded:
         • One row for the Control Module (if present)
-        • One row for the Transmitter    (if present)
+        • One row for the Field Device    (if present)
         • One row per signal in the composition
           (repeated signals, e.g. 2×HDI, produce two rows each)
     """
@@ -4552,7 +4552,7 @@ def export_project_io_list(path: str, project_id: int,
     # ── "Final Count" sheet — signal typical counts only ──────────────────
     ws_count = wb.create_sheet("Final Count")
 
-    # Count each signal type from signal rows only (not CM/TX rows).
+    # Count each signal type from signal rows only (not CM/FD rows).
     # Signal rows are identified by their type being one of the 8 IO types.
     signal_type_counts: dict[str, int] = {t: 0 for t in _SIGNAL_IO_TYPES}
     for r in expanded_all:
@@ -5007,10 +5007,10 @@ class CompositionPlacementDialog(QDialog):
     Dialog shown when placing a Signal Typical on the PDF.
     Displays the full typical configuration.
 
-    Read-only: title, Control Module Name, Transmitter Name,
+    Read-only: title, Control Module Name, Field Device Name,
                Signal Name, Signal Type, Signal Description,
                Count, and Resulting Signal columns.
-    Editable:  description, CM type/desc, TX type/desc,
+    Editable:  description, CM type/desc, FD type/desc,
                Prefix, Suffix, and any extra columns.
     """
 
@@ -5055,8 +5055,8 @@ class CompositionPlacementDialog(QDialog):
         desc_row.addWidget(self.desc_edit)
         lay.addLayout(desc_row)
 
-        # ── Control Module + Transmitter (side-by-side) ───────────────────
-        cm_tx_lay = QHBoxLayout()
+        # ── Control Module + Field Device (side-by-side) ───────────────────
+        cm_fd_lay = QHBoxLayout()
 
         cm_group = QGroupBox("Control Module")
         cm_group.setStyleSheet(
@@ -5073,25 +5073,25 @@ class CompositionPlacementDialog(QDialog):
         self.cm_desc_edit = QLineEdit(tp.get("cm_description", composition.get("cm_description", "NA") or "NA"))
         cm_form.addRow("Type:", self.cm_type_edit)
         cm_form.addRow("Description:", self.cm_desc_edit)
-        cm_tx_lay.addWidget(cm_group)
+        cm_fd_lay.addWidget(cm_group)
 
-        tx_group = QGroupBox("Transmitter")
-        tx_group.setStyleSheet(
+        fd_group = QGroupBox("Field Device")
+        fd_group.setStyleSheet(
             "QGroupBox{border:1px solid #555;border-radius:4px;margin-top:6px;"
             "color:#F0F0F0;font-weight:bold;}"
             "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}")
-        tx_form = QFormLayout(tx_group)
-        tx_form.setContentsMargins(8, 8, 8, 4)
-        tx_form.setSpacing(4)
-        tx_name_lbl = QLabel(composition.get("transmitter", "NA") or "NA")
-        tx_name_lbl.setStyleSheet("color:#AAAAAA;")
-        tx_form.addRow("Name:", tx_name_lbl)
-        self.tx_type_edit = QLineEdit(tp.get("tx_type", composition.get("tx_type", "NA") or "NA"))
-        self.tx_desc_edit = QLineEdit(tp.get("tx_description", composition.get("tx_description", "NA") or "NA"))
-        tx_form.addRow("Type:", self.tx_type_edit)
-        tx_form.addRow("Description:", self.tx_desc_edit)
-        cm_tx_lay.addWidget(tx_group)
-        lay.addLayout(cm_tx_lay)
+        fd_form = QFormLayout(fd_group)
+        fd_form.setContentsMargins(8, 8, 8, 4)
+        fd_form.setSpacing(4)
+        fd_name_lbl = QLabel(composition.get("field_device", "NA") or "NA")
+        fd_name_lbl.setStyleSheet("color:#AAAAAA;")
+        fd_form.addRow("Name:", fd_name_lbl)
+        self.fd_type_edit = QLineEdit(tp.get("fd_type", composition.get("fd_type", "NA") or "NA"))
+        self.fd_desc_edit = QLineEdit(tp.get("fd_description", composition.get("fd_description", "NA") or "NA"))
+        fd_form.addRow("Type:", self.fd_type_edit)
+        fd_form.addRow("Description:", self.fd_desc_edit)
+        cm_fd_lay.addWidget(fd_group)
+        lay.addLayout(cm_fd_lay)
 
         # ── Signals table (mirrors Signal Typical configuration columns) ──
         extra_headers = composition.get("extra_column_headers", [])
@@ -5204,8 +5204,8 @@ class CompositionPlacementDialog(QDialog):
             "description":    self.desc_edit.text().strip(),
             "cm_type":        self.cm_type_edit.text().strip(),
             "cm_description": self.cm_desc_edit.text().strip(),
-            "tx_type":        self.tx_type_edit.text().strip(),
-            "tx_description": self.tx_desc_edit.text().strip(),
+            "fd_type":        self.fd_type_edit.text().strip(),
+            "fd_description": self.fd_desc_edit.text().strip(),
             "signal_overrides": overrides,
         }
             
@@ -5985,7 +5985,6 @@ class SignalCompositionConfigDialog(QDialog):
         lay.setSpacing(10)
         
         lay.addWidget(QLabel(
-            f"<b>Signal Typicals for {self._owner_name}</b><br>"
             "<span style='color:#AAAAAA;font-size:8pt;'>"
             "Define signal typicals with detailed signal information.</span>"))
         
@@ -6071,8 +6070,8 @@ class SignalCompositionConfigDialog(QDialog):
         self._add_desc_btn.clicked.connect(lambda: self._add_desc_field())
         right_lay.addWidget(self._add_desc_btn)
 
-        # Control Module and Transmitter as horizontal single-row tables
-        cm_tx_outer = QHBoxLayout()
+        # Control Module and Field Device as horizontal single-row tables
+        cm_fd_outer = QHBoxLayout()
 
         # Control Module table
         cm_widget = QWidget()
@@ -6101,36 +6100,36 @@ class SignalCompositionConfigDialog(QDialog):
         self.cm_desc_item = QTableWidgetItem("NA")
         self.cm_table.setItem(0, 2, self.cm_desc_item)
         cm_vlay.addWidget(self.cm_table)
-        cm_tx_outer.addWidget(cm_widget)
+        cm_fd_outer.addWidget(cm_widget)
 
-        # Transmitter table
-        tx_widget = QWidget()
-        tx_vlay   = QVBoxLayout(tx_widget)
-        tx_vlay.setContentsMargins(0, 0, 0, 0)
-        tx_vlay.setSpacing(2)
-        tx_vlay.addWidget(QLabel("<b>Transmitter:</b>"))
-        self.tx_table = QTableWidget(1, 3)
-        self.tx_table.setHorizontalHeaderLabels(["Name", "Type", "Description"])
-        self.tx_table.horizontalHeader().setSectionResizeMode(
+        # Field Device table
+        fd_widget = QWidget()
+        fd_vlay   = QVBoxLayout(fd_widget)
+        fd_vlay.setContentsMargins(0, 0, 0, 0)
+        fd_vlay.setSpacing(2)
+        fd_vlay.addWidget(QLabel("<b>Field Device:</b>"))
+        self.fd_table = QTableWidget(1, 3)
+        self.fd_table.setHorizontalHeaderLabels(["Name", "Type", "Description"])
+        self.fd_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Interactive)
-        self.tx_table.horizontalHeader().setSectionResizeMode(
+        self.fd_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.Interactive)
-        self.tx_table.horizontalHeader().setSectionResizeMode(
+        self.fd_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch)
-        self.tx_table.verticalHeader().setVisible(False)
-        self.tx_table.setFixedHeight(56)
-        self.tx_table.setColumnWidth(0, 100)
-        self.tx_table.setColumnWidth(1, 90)
-        self.tx_name_item = QTableWidgetItem("NA")
-        self.tx_table.setItem(0, 0, self.tx_name_item)
-        self.tx_type_item = QTableWidgetItem("NA")
-        self.tx_table.setItem(0, 1, self.tx_type_item)
-        self.tx_desc_item = QTableWidgetItem("NA")
-        self.tx_table.setItem(0, 2, self.tx_desc_item)
-        tx_vlay.addWidget(self.tx_table)
-        cm_tx_outer.addWidget(tx_widget)
+        self.fd_table.verticalHeader().setVisible(False)
+        self.fd_table.setFixedHeight(56)
+        self.fd_table.setColumnWidth(0, 100)
+        self.fd_table.setColumnWidth(1, 90)
+        self.fd_name_item = QTableWidgetItem("NA")
+        self.fd_table.setItem(0, 0, self.fd_name_item)
+        self.fd_type_item = QTableWidgetItem("NA")
+        self.fd_table.setItem(0, 1, self.fd_type_item)
+        self.fd_desc_item = QTableWidgetItem("NA")
+        self.fd_table.setItem(0, 2, self.fd_desc_item)
+        fd_vlay.addWidget(self.fd_table)
+        cm_fd_outer.addWidget(fd_widget)
 
-        right_lay.addLayout(cm_tx_outer)
+        right_lay.addLayout(cm_fd_outer)
 
         # Back-compat aliases so the rest of the code that reads .text() works
         # We override the read helpers below instead.
@@ -6302,9 +6301,9 @@ class SignalCompositionConfigDialog(QDialog):
             self.cm_table.item(0, 0).setText(comp.get("control_module", "NA") or "NA")
             self.cm_table.item(0, 1).setText("CM")  # always fixed
             self.cm_table.item(0, 2).setText(comp.get("cm_description", "NA") or "NA")
-            self.tx_table.item(0, 0).setText(comp.get("transmitter", "NA") or "NA")
-            self.tx_table.item(0, 1).setText(comp.get("tx_type", "NA") or "NA")
-            self.tx_table.item(0, 2).setText(comp.get("tx_description", "NA") or "NA")
+            self.fd_table.item(0, 0).setText(comp.get("field_device", "NA") or "NA")
+            self.fd_table.item(0, 1).setText(comp.get("fd_type", "NA") or "NA")
+            self.fd_table.item(0, 2).setText(comp.get("fd_description", "NA") or "NA")
             # Reset to fixed columns then restore any extra columns saved with this composition
             self.signals_table.blockSignals(True)
             self.signals_table.setColumnCount(self._FIXED_COL_COUNT)
@@ -6326,9 +6325,9 @@ class SignalCompositionConfigDialog(QDialog):
         self.cm_table.item(0, 0).setText("NA")
         self.cm_table.item(0, 1).setText("CM")  # always fixed
         self.cm_table.item(0, 2).setText("NA")
-        self.tx_table.item(0, 0).setText("NA")
-        self.tx_table.item(0, 1).setText("NA")
-        self.tx_table.item(0, 2).setText("NA")
+        self.fd_table.item(0, 0).setText("NA")
+        self.fd_table.item(0, 1).setText("NA")
+        self.fd_table.item(0, 2).setText("NA")
         self.signals_table.blockSignals(True)
         self.signals_table.setColumnCount(self._FIXED_COL_COUNT)
         self.signals_table.setRowCount(0)
@@ -6859,10 +6858,10 @@ class SignalCompositionConfigDialog(QDialog):
                     "Enter a value or use NA.")
                 return False
 
-            if not comp.get("transmitter", "").strip():
+            if not comp.get("field_device", "").strip():
                 QMessageBox.warning(
                     self, "Validation Error",
-                    f"Composition '{comp['title']}': Transmitter Name is mandatory. "
+                    f"Composition '{comp['title']}': Field Device Name is mandatory. "
                     "Enter a value or use NA.")
                 return False
 
@@ -6902,12 +6901,12 @@ class SignalCompositionConfigDialog(QDialog):
                         description=comp["description"],
                         signals=comp["signals"],
                         control_module=comp.get("control_module", "NA"),
-                        transmitter=comp.get("transmitter", "NA"),
+                        field_device=comp.get("field_device", "NA"),
                         extra_column_headers=comp.get("extra_column_headers", []),
                         cm_type=comp.get("cm_type", "NA"),
                         cm_description=comp.get("cm_description", "NA"),
-                        tx_type=comp.get("tx_type", "NA"),
-                        tx_description=comp.get("tx_description", "NA"),
+                        fd_type=comp.get("fd_type", "NA"),
+                        fd_description=comp.get("fd_description", "NA"),
                         category=comp.get("category", "")
                     )
                     # Assign to owner
@@ -6920,12 +6919,12 @@ class SignalCompositionConfigDialog(QDialog):
                         description=comp["description"],
                         signals=comp["signals"],
                         control_module=comp.get("control_module", "NA"),
-                        transmitter=comp.get("transmitter", "NA"),
+                        field_device=comp.get("field_device", "NA"),
                         extra_column_headers=comp.get("extra_column_headers", []),
                         cm_type=comp.get("cm_type", "NA"),
                         cm_description=comp.get("cm_description", "NA"),
-                        tx_type=comp.get("tx_type", "NA"),
-                        tx_description=comp.get("tx_description", "NA"),
+                        fd_type=comp.get("fd_type", "NA"),
+                        fd_description=comp.get("fd_description", "NA"),
                         category=comp.get("category", "")
                     )
             except Exception as e:
@@ -6999,9 +6998,9 @@ class SignalCompositionConfigDialog(QDialog):
                 "control_module": "NA",
                 "cm_type": "NA",
                 "cm_description": "NA",
-                "transmitter": "NA",
-                "tx_type": "NA",
-                "tx_description": "NA",
+                "field_device": "NA",
+                "fd_type": "NA",
+                "fd_description": "NA",
                 "extra_column_headers": [],
                 "signals": []
             }
@@ -7016,9 +7015,9 @@ class SignalCompositionConfigDialog(QDialog):
         comp_to_update["control_module"] = (self.cm_table.item(0, 0).text().strip() or "NA")
         comp_to_update["cm_type"]        = "CM"  # always fixed
         comp_to_update["cm_description"] = (self.cm_table.item(0, 2).text().strip() or "NA")
-        comp_to_update["transmitter"]    = (self.tx_table.item(0, 0).text().strip() or "NA")
-        comp_to_update["tx_type"]        = (self.tx_table.item(0, 1).text().strip() or "NA")
-        comp_to_update["tx_description"] = (self.tx_table.item(0, 2).text().strip() or "NA")
+        comp_to_update["field_device"]    = (self.fd_table.item(0, 0).text().strip() or "NA")
+        comp_to_update["fd_type"]        = (self.fd_table.item(0, 1).text().strip() or "NA")
+        comp_to_update["fd_description"] = (self.fd_table.item(0, 2).text().strip() or "NA")
         comp_to_update["extra_column_headers"] = extra_column_headers
         comp_to_update["signals"] = signals
 
@@ -8034,17 +8033,17 @@ class MarkerInfoDialog(QDialog):
         config_table.setItem(3, 1, QTableWidgetItem(
             composition.get("cm_description", "NA") or "NA"))
 
-        config_table.setItem(4, 0, QTableWidgetItem("Transmitter Name:"))
+        config_table.setItem(4, 0, QTableWidgetItem("Field Device Name:"))
         config_table.setItem(4, 1, QTableWidgetItem(
-            composition.get("transmitter", "NA") or "NA"))
+            composition.get("field_device", "NA") or "NA"))
 
-        config_table.setItem(5, 0, QTableWidgetItem("Transmitter Type:"))
+        config_table.setItem(5, 0, QTableWidgetItem("Field Device Type:"))
         config_table.setItem(5, 1, QTableWidgetItem(
-            composition.get("tx_type", "NA") or "NA"))
+            composition.get("fd_type", "NA") or "NA"))
 
-        config_table.setItem(6, 0, QTableWidgetItem("Transmitter Desc.:"))
+        config_table.setItem(6, 0, QTableWidgetItem("F Desc.:"))
         config_table.setItem(6, 1, QTableWidgetItem(
-            composition.get("tx_description", "NA") or "NA"))
+            composition.get("fd_description", "NA") or "NA"))
 
         config_table.setMaximumHeight(200)
         lay.addWidget(config_table)
@@ -8120,7 +8119,7 @@ class MarkerInfoDialog(QDialog):
 class PDFViewer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(" Viewer")
+        self.setWindowTitle("Technical Drawing Viewer")
         self.resize(1280, 900)
 
         # ── Resolve saved theme (applied after _build_ui so toolbar exists) ─
@@ -8232,7 +8231,7 @@ class PDFViewer(QMainWindow):
         # ── Help menu ─────────────────────────────────────────────────────
         help_menu = mb.addMenu("&Help")
         self.act_about = QAction("ℹ️  &About",        self)
-        self.act_help  = QAction("❓  &Help / Contact", self, shortcut="F1")
+        self.act_help  = QAction("❓  &Help", self, shortcut="F1")
         help_menu.addAction(self.act_about)
         help_menu.addAction(self.act_help)
         self.act_about.triggered.connect(self._show_about)
@@ -8389,16 +8388,16 @@ class PDFViewer(QMainWindow):
         msg.setWindowTitle("About")
         msg.setIcon(QMessageBox.Icon.Information)
         msg.setText(
-            "<b>P&amp;ID IO Count Automation Tool</b>"
+            "<b>Tool Information</b>"
         )
         msg.setInformativeText(
             f"<table style='font-size:10pt; line-height:1.6;'>"
-            f"<tr><td><b>Program&nbsp;Name</b></td><td>&nbsp;:&nbsp;</td><td>P&amp;ID IO Count Automation Tool</td></tr>"
-            f"<tr><td><b>Developed&nbsp;By</b></td><td>&nbsp;:&nbsp;</td><td>Shri Goldberg</td></tr>"
-            f"<tr><td><b>Mentor</b></td><td>&nbsp;:&nbsp;</td><td>—</td></tr>"
-            f"<tr><td><b>Scripted&nbsp;Using</b></td><td>&nbsp;:&nbsp;</td><td>Python (PySide6)</td></tr>"
+            f"<tr><td><b>Program&nbsp;Name</b></td><td>&nbsp;:&nbsp;</td><td>Technical Drawing Viewer </td></tr>"
+            f"<tr><td><b>Developed&nbsp;By</b></td><td>&nbsp;:&nbsp;</td><td>Sriharan Thirumalai</td></tr>"
+            f"<tr><td><b>Mentor</b></td><td>&nbsp;:&nbsp;</td><td>Carlo Lebrun</td></tr>"
+            f"<tr><td><b>Scripted&nbsp;Using</b></td><td>&nbsp;:&nbsp;</td><td>Python</td></tr>"
             f"<tr><td><b>Version</b></td><td>&nbsp;:&nbsp;</td><td>{version}</td></tr>"
-            f"<tr><td><b>Date</b></td><td>&nbsp;:&nbsp;</td><td>2024</td></tr>"
+            f"<tr><td><b>Date</b></td><td>&nbsp;:&nbsp;</td><td>14/04/2026</td></tr>"
             f"</table>"
         )
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -8411,10 +8410,10 @@ class PDFViewer(QMainWindow):
         msg.setIcon(QMessageBox.Icon.Question)
         msg.setText("<b>Program Assistance</b>")
         msg.setInformativeText(
-            "<p>For any program-related assistance, please contact <b>Shri</b>.</p>"
+            "<p>For any program-related assistance, please contact <b>Sriharan Thirumalai</b>.</p>"
             "<table style='font-size:10pt; line-height:1.8;'>"
-            "<tr><td><b>Email</b></td><td>&nbsp;:&nbsp;</td><td>shri@example.com</td></tr>"
-            "<tr><td><b>Phone</b></td><td>&nbsp;:&nbsp;</td><td>+1 (555) 000-0000</td></tr>"
+            "<tr><td><b>Email</b></td><td>&nbsp;:&nbsp;</td><td>sriharan.thirumalai@italiautomazione.com</td></tr>"
+            "<tr><td><b>Phone</b></td><td>&nbsp;:&nbsp;</td><td>+39 3480380741</td></tr>"
             "</table>"
         )
         msg.setStandardButtons(QMessageBox.StandardButton.Ok)
@@ -9648,7 +9647,7 @@ if __name__ == "__main__":
     # Set the application-wide font with an explicit point size before any
     # widgets are created.
     from PySide6.QtGui import QFont as _AppFont
-    app.setFont(_AppFont("Arial", 9))
+    app.setFont(_AppFont("Montserrat", 9))
     viewer = PDFViewer()
     viewer.show()
     sys.exit(app.exec())
