@@ -8769,7 +8769,7 @@ class PDFViewer(QMainWindow):
             "composition_id": composition_id,
             "is_composition": True,
             "tag_parts": tag_parts,
-            "count": count,
+            "count": multiplier,
             "page": page,
             "pdf_x": pdf_x,
             "pdf_y": pdf_y,
