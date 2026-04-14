@@ -174,50 +174,40 @@ _LIGHT_THEME_SS = """
 _DARK_TOOLBAR_SS = """
     QToolBar { background: #252525; border-bottom: 1px solid #3A3A3A;
                padding: 2px 4px; spacing: 2px; }
-    QToolButton { background: #3A3A3A; color: #CCCCCC;
-                  border-top: 2px solid #555555; border-left: 2px solid #555555;
-                  border-bottom: 2px solid #1A1A1A; border-right: 2px solid #1A1A1A;
-                  border-radius: 4px;
-                  padding: 3px 8px 4px 8px; font-size: 9pt; min-width: 44px; }
-    QToolButton:hover { background: #4A4A4A; color: #FFFFFF;
-                        border-top: 2px solid #6A6A6A; border-left: 2px solid #6A6A6A;
-                        border-bottom: 2px solid #202020; border-right: 2px solid #202020; }
-    QToolButton:pressed { background: #222222; color: #BBBBBB;
-                          border-top: 2px solid #1A1A1A; border-left: 2px solid #1A1A1A;
-                          border-bottom: 2px solid #555555; border-right: 2px solid #555555;
-                          padding: 4px 7px 3px 9px; }
-    QToolButton:checked { background: #1A3A5C;
-                          border-top: 2px solid #1A1A1A; border-left: 2px solid #1A1A1A;
-                          border-bottom: 2px solid #3D5A80; border-right: 2px solid #3D5A80;
-                          color: #7EC8F0; }
-    QToolButton:disabled { background: #2A2A2A; color: #505050;
-                           border-top: 2px solid #383838; border-left: 2px solid #383838;
-                           border-bottom: 2px solid #181818; border-right: 2px solid #181818; }
+    QToolButton { background: #2E2E2E; color: #CCCCCC;
+                  border: 1px solid #484848; border-bottom: 3px solid #181818;
+                  border-radius: 5px;
+                  padding: 4px 10px; font-size: 9pt; min-width: 44px; }
+    QToolButton:hover { background: #3A3A3A; color: #FFFFFF;
+                        border: 1px solid #5A8ABB; border-bottom: 3px solid #2D5A80; }
+    QToolButton:pressed { background: #1C1C1C; color: #AAAAAA;
+                          border: 1px solid #333333; border-top: 3px solid #111111;
+                          border-bottom: 1px solid #484848;
+                          padding: 5px 9px 3px 11px; }
+    QToolButton:checked { background: #1A3A5C; color: #7EC8F0;
+                          border: 1px solid #3D5A80; border-bottom: 3px solid #1A3A5C; }
+    QToolButton:disabled { background: #252525; color: #484848;
+                           border: 1px solid #333333; border-bottom: 3px solid #141414; }
     QToolBar::separator { background: #3A3A3A; width: 1px; margin: 4px 6px; }
 """
 
 _LIGHT_TOOLBAR_SS = """
     QToolBar { background: #E8E8E8; border-bottom: 1px solid #CCCCCC;
                padding: 2px 4px; spacing: 2px; }
-    QToolButton { background: #F0F0F0; color: #333333;
-                  border-top: 2px solid #FFFFFF; border-left: 2px solid #FFFFFF;
-                  border-bottom: 2px solid #999999; border-right: 2px solid #999999;
-                  border-radius: 4px;
-                  padding: 3px 8px 4px 8px; font-size: 9pt; min-width: 44px; }
-    QToolButton:hover { background: #E0E8F8; color: #000000;
-                        border-top: 2px solid #FFFFFF; border-left: 2px solid #FFFFFF;
-                        border-bottom: 2px solid #7A9ABB; border-right: 2px solid #7A9ABB; }
-    QToolButton:pressed { background: #C8C8C8; color: #222222;
-                          border-top: 2px solid #999999; border-left: 2px solid #999999;
-                          border-bottom: 2px solid #EEEEEE; border-right: 2px solid #EEEEEE;
-                          padding: 4px 7px 3px 9px; }
-    QToolButton:checked { background: #C8DCEC;
-                          border-top: 2px solid #999999; border-left: 2px solid #999999;
-                          border-bottom: 2px solid #3D5A80; border-right: 2px solid #3D5A80;
-                          color: #1A3A5C; }
-    QToolButton:disabled { background: #E0E0E0; color: #AAAAAA;
-                           border-top: 2px solid #EBEBEB; border-left: 2px solid #EBEBEB;
-                           border-bottom: 2px solid #BBBBBB; border-right: 2px solid #BBBBBB; }
+    QToolButton { background: #F5F5F5; color: #333333;
+                  border: 1px solid #C0C0C0; border-bottom: 3px solid #999999;
+                  border-radius: 5px;
+                  padding: 4px 10px; font-size: 9pt; min-width: 44px; }
+    QToolButton:hover { background: #EBF3FC; color: #000000;
+                        border: 1px solid #5A8ABB; border-bottom: 3px solid #3D6FA0; }
+    QToolButton:pressed { background: #D5D5D5; color: #111111;
+                          border: 1px solid #AAAAAA; border-top: 3px solid #888888;
+                          border-bottom: 1px solid #C8C8C8;
+                          padding: 5px 9px 3px 11px; }
+    QToolButton:checked { background: #C8DCEC; color: #1A3A5C;
+                          border: 1px solid #5A8ABB; border-bottom: 3px solid #3D6FA0; }
+    QToolButton:disabled { background: #EBEBEB; color: #BBBBBB;
+                           border: 1px solid #D8D8D8; border-bottom: 3px solid #C0C0C0; }
     QToolBar::separator { background: #CCCCCC; width: 1px; margin: 4px 6px; }
 """
 
@@ -8265,11 +8255,11 @@ class PDFViewer(QMainWindow):
         tb.addAction(self.act_save_pdf)
         tb.addSeparator()
 
-        # Group 3 — Edit (icon mode for undo/redo so the icon shows)
-        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        # Group 3 — Edit
+        _tb_action("↩", "Undo", self.act_undo)
         tb.addAction(self.act_undo)
+        _tb_action("↪", "Redo", self.act_redo)
         tb.addAction(self.act_redo)
-        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         tb.addSeparator()
 
         # Group 4 — View / Navigation
@@ -8438,8 +8428,8 @@ class PDFViewer(QMainWindow):
             self._set_pdf_actions_enabled(False)
             self.act_undo.setEnabled(False)
             self.act_redo.setEnabled(False)
-            self.act_undo.setText("&Undo")
-            self.act_redo.setText("&Redo")
+            self.act_undo.setText("↩\nUndo")
+            self.act_redo.setText("↪\nRedo")
             self.page_label.setText("Page: - / -")
             self.statusBar().showMessage("Open a PDF to begin.")
         else:
@@ -8864,8 +8854,8 @@ class PDFViewer(QMainWindow):
         r = len(ts.redo_stack)
         self.act_undo.setEnabled(bool(u))
         self.act_redo.setEnabled(bool(r))
-        self.act_undo.setText(f"&Undo  ({u})" if u else "&Undo")
-        self.act_redo.setText(f"&Redo  ({r})" if r else "&Redo")
+        self.act_undo.setText(f"↩\nUndo ({u})" if u else "↩\nUndo")
+        self.act_redo.setText(f"↪\nRedo ({r})" if r else "↪\nRedo")
 
     def _restore_snapshot(self, ts: TabState, snapshot: list):
         ts.io_list.clear()
