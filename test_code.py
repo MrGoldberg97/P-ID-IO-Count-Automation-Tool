@@ -8272,6 +8272,13 @@ class PDFViewer(QMainWindow):
         tb.addAction(self.act_mode_text)
         tb.addSeparator()
 
+        # Group 6 — Export / Config shortcuts
+        _tb_action("📊", "Export Excel",    self.act_export_xlsx)
+        tb.addAction(self.act_export_xlsx)
+        _tb_action("🔧", "Signal Typicals", self.act_configure_compositions)
+        tb.addAction(self.act_configure_compositions)
+        tb.addSeparator()
+
         # ── Tab widget ───────────────────────────────────────────────────
         self._tabs = QTabWidget()
         self._tabs.setTabsClosable(True)
