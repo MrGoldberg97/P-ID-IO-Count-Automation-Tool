@@ -8123,15 +8123,15 @@ class PDFViewer(QMainWindow):
         self.setWindowTitle(" Viewer")
         self.resize(1280, 900)
 
-        # ── Apply saved theme ─────────────────────────────────────────────
+        # ── Resolve saved theme (applied after _build_ui so toolbar exists) ─
         self._current_theme = db_load_theme()
-        self._apply_theme(self._current_theme, _persist=False)
 
         # Shared across all tabs — signal type list
         self._signal_types: list = db_load_signal_types()
 
         self._build_ui()
         self._connect_signals()
+        self._apply_theme(self._current_theme, _persist=False)
         self.act_configure_compositions.triggered.connect(self.open_signal_compositions_config)
         self._set_pdf_actions_enabled(False)
 
@@ -8338,31 +8338,39 @@ class PDFViewer(QMainWindow):
 
     # ── Theme ──────────────────────────────────────────────────────────────
     def _apply_theme(self, theme: str, _persist: bool = True) -> None:
-        """Switch the application-wide theme to 'dark', 'light', or 'system'."""
+        """Switch the application-wide theme to 'dark', 'light', or 'system'.
+
+        For 'system', the OS palette is inspected to determine whether the
+        desktop is currently in dark or light mode, and the matching theme
+        is applied automatically.
+        """
         self._current_theme = theme
         app = QApplication.instance()
-        if theme == "dark":
+
+        # Resolve 'system' → actual OS preference
+        if theme == "system":
+            bg_lightness = app.palette().color(QPalette.ColorRole.Window).lightness()
+            effective = "dark" if bg_lightness < 128 else "light"
+        else:
+            effective = theme
+
+        if effective == "dark":
             app.setStyleSheet(_DARK_THEME_SS)
             if hasattr(self, "_toolbar"):
                 self._toolbar.setStyleSheet(_DARK_TOOLBAR_SS)
             if hasattr(self, "_project_dock"):
                 self._project_dock.setStyleSheet(_DARK_DOCK_SS)
-        elif theme == "light":
+        else:  # light
             app.setStyleSheet(_LIGHT_THEME_SS)
             if hasattr(self, "_toolbar"):
                 self._toolbar.setStyleSheet(_LIGHT_TOOLBAR_SS)
             if hasattr(self, "_project_dock"):
                 self._project_dock.setStyleSheet(_LIGHT_DOCK_SS)
-        else:  # system
-            app.setStyleSheet("")
-            if hasattr(self, "_toolbar"):
-                self._toolbar.setStyleSheet(_LIGHT_TOOLBAR_SS)
-            if hasattr(self, "_project_dock"):
-                self._project_dock.setStyleSheet("")
+
         if _persist:
             db_save_theme(theme)
         if hasattr(self, "_project_panel"):
-            self._project_panel.set_theme(theme)
+            self._project_panel.set_theme(effective)
 
     def _connect_signals(self):
         self.act_open.triggered.connect(self.open_pdf)
