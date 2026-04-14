@@ -1057,7 +1057,9 @@ class MarkerOverlay(QWidget):
                 signal_counts = {}
                 for sig in composition.get("signals", []):
                     sig_type = sig.get("signal_type", "")
-                    signal_counts[sig_type] = signal_counts.get(sig_type, 0) + new_count
+                    if sig_type:
+                        sig_count = int(sig.get("count", 1) or 1)
+                        signal_counts[sig_type] = signal_counts.get(sig_type, 0) + sig_count * new_count
                 parts = [f"{c}{t}" for t, c in sorted(signal_counts.items())]
                 display_text = " ".join(parts) if parts else composition["title"]
                 marker["type"] = display_text
@@ -8742,14 +8744,17 @@ class PDFViewer(QMainWindow):
         """
         self._push_undo(ts)
         
-        # Get the count from tag_parts
-        count = tag_parts.get("count", 1)
+        # User-level multiplier (how many times the whole composition is placed).
+        # CompositionPlacementDialog does not set this, so it defaults to 1.
+        multiplier = int(tag_parts.get("count", 1) or 1)
         
-        # Build the composition text with multiplied counts
+        # Build the composition text using each signal's configured count.
         signal_counts = {}
         for sig in composition.get("signals", []):
             sig_type = sig.get("signal_type", "")
-            signal_counts[sig_type] = signal_counts.get(sig_type, 0) + count
+            if sig_type:
+                sig_count = int(sig.get("count", 1) or 1)
+                signal_counts[sig_type] = signal_counts.get(sig_type, 0) + sig_count * multiplier
         
         # Build display text
         parts = []
