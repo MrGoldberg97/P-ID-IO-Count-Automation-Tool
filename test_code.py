@@ -8229,6 +8229,15 @@ class PDFViewer(QMainWindow):
         pref_menu.addAction(self.act_mode_marker)
         pref_menu.addAction(self.act_mode_text)
 
+        # ── Help menu ─────────────────────────────────────────────────────
+        help_menu = mb.addMenu("&Help")
+        self.act_about = QAction("ℹ️  &About",        self)
+        self.act_help  = QAction("❓  &Help / Contact", self, shortcut="F1")
+        help_menu.addAction(self.act_about)
+        help_menu.addAction(self.act_help)
+        self.act_about.triggered.connect(self._show_about)
+        self.act_help.triggered.connect(self._show_help)
+
         # ── Quick-access toolbar ─────────────────────────────────────────
         tb = self.addToolBar("Quick Access")
         tb.setMovable(False)
@@ -8371,6 +8380,45 @@ class PDFViewer(QMainWindow):
             db_save_theme(theme)
         if hasattr(self, "_project_panel"):
             self._project_panel.set_theme(effective)
+
+    # ── Help dialogs ───────────────────────────────────────────────────────
+    def _show_about(self) -> None:
+        """Display the About dialog."""
+        version = getattr(self, "_app_version", "v1.0.0")
+        msg = QMessageBox(self)
+        msg.setWindowTitle("About")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText(
+            "<b>P&amp;ID IO Count Automation Tool</b>"
+        )
+        msg.setInformativeText(
+            f"<table style='font-size:10pt; line-height:1.6;'>"
+            f"<tr><td><b>Program&nbsp;Name</b></td><td>&nbsp;:&nbsp;</td><td>P&amp;ID IO Count Automation Tool</td></tr>"
+            f"<tr><td><b>Developed&nbsp;By</b></td><td>&nbsp;:&nbsp;</td><td>Shri Goldberg</td></tr>"
+            f"<tr><td><b>Mentor</b></td><td>&nbsp;:&nbsp;</td><td>—</td></tr>"
+            f"<tr><td><b>Scripted&nbsp;Using</b></td><td>&nbsp;:&nbsp;</td><td>Python (PySide6)</td></tr>"
+            f"<tr><td><b>Version</b></td><td>&nbsp;:&nbsp;</td><td>{version}</td></tr>"
+            f"<tr><td><b>Date</b></td><td>&nbsp;:&nbsp;</td><td>2024</td></tr>"
+            f"</table>"
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+
+    def _show_help(self) -> None:
+        """Display the Help / Contact dialog."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Help")
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setText("<b>Program Assistance</b>")
+        msg.setInformativeText(
+            "<p>For any program-related assistance, please contact <b>Shri</b>.</p>"
+            "<table style='font-size:10pt; line-height:1.8;'>"
+            "<tr><td><b>Email</b></td><td>&nbsp;:&nbsp;</td><td>shri@example.com</td></tr>"
+            "<tr><td><b>Phone</b></td><td>&nbsp;:&nbsp;</td><td>+1 (555) 000-0000</td></tr>"
+            "</table>"
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
 
     def _connect_signals(self):
         self.act_open.triggered.connect(self.open_pdf)
