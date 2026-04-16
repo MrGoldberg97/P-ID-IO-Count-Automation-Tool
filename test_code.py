@@ -6884,26 +6884,45 @@ class SignalCompositionConfigDialog(QDialog):
                     self, "Validation Error",
                     f"Composition '{comp['title']}' must have at least one signal.")
                 return False
-            
-            # Check mandatory fields in each signal
-            for sig in comp["signals"]:
-                if not sig.get("signal_name") or not sig.get("signal_type") or not sig.get("signal_description"):
-                    QMessageBox.warning(
-                        self, "Validation Error",
-                        f"In composition '{comp['title']}': Signal Name, Type, and Description are mandatory.")
-                    return False
-                if not sig.get("prefix", "").strip():
-                    QMessageBox.warning(
-                        self, "Validation Error",
-                        f"In composition '{comp['title']}': Prefix is mandatory per signal. "
-                        "Enter a value or use NA.")
-                    return False
-                if not sig.get("suffix", "").strip():
-                    QMessageBox.warning(
-                        self, "Validation Error",
-                        f"In composition '{comp['title']}': Suffix is mandatory per signal. "
-                        "Enter a value or use NA.")
-                    return False
+
+            # Apply strict per-signal validation only to the composition being
+            # created or actively edited.  Pre-existing compositions loaded from
+            # the database may have been saved before the description/prefix/suffix
+            # requirements were introduced, so re-validating them here would
+            # incorrectly block saving a new, fully-filled composition.
+            is_current_comp = (
+                comp.get("id") is None
+                or comp.get("id") == self._current_comp_id
+            )
+            if is_current_comp:
+                for sig in comp["signals"]:
+                    if not sig.get("signal_name"):
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Signal Name is mandatory.")
+                        return False
+                    if not sig.get("signal_type"):
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Signal Type is mandatory.")
+                        return False
+                    if not sig.get("signal_description"):
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Signal Description is mandatory.")
+                        return False
+                    if not sig.get("prefix", "").strip():
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Prefix is mandatory per signal. "
+                            "Enter a value or use NA.")
+                        return False
+                    if not sig.get("suffix", "").strip():
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Suffix is mandatory per signal. "
+                            "Enter a value or use NA.")
+                        return False
         
         # Save to database
         for comp in self._compositions:
