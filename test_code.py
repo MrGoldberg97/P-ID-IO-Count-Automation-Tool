@@ -4,6 +4,7 @@ import sqlite3
 import os
 import hashlib
 import copy
+import json
 from dataclasses import dataclass, field
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import FreeText as PdfFreeTextAnnotation
@@ -19,13 +20,27 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QGroupBox, QTreeWidget, QTreeWidgetItem,
     QPlainTextEdit, QStackedWidget, QTabWidget, QSizePolicy,
-    QDockWidget, QTextEdit, QScrollArea, QSpinBox
+    QDockWidget, QTextEdit, QScrollArea, QSpinBox, QStyle
 )
 from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QTimer
 from PySide6.QtGui import (QPainter, QColor, QPen, QPainterPath, QBrush,
-                            QAction, QKeySequence, QActionGroup, QFont)
+                            QAction, QKeySequence, QActionGroup, QFont, QPalette,
+                            QIcon, QPixmap)
 from PySide6.QtPdf import QPdfDocument
 from PySide6.QtPdfWidgets import QPdfView
+
+# ---------------------------------------------------------------------------
+# Resource path helper (works both when running from source and as a
+# PyInstaller one-file executable).
+# ---------------------------------------------------------------------------
+def resource_path(relative: str) -> str:
+    """Return the absolute path to *relative*, resolving against the PyInstaller
+    temporary extraction directory (sys._MEIPASS) when running as a frozen
+    executable, or against the directory that contains this source file when
+    running normally."""
+    base = getattr(sys, "_MEIPASS",
+                   os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -39,6 +54,187 @@ MARKER_W  = 22
 MARKER_H  = 22
 MARKER_TH = 7
 
+# ---------------------------------------------------------------------------
+# Theme stylesheets
+# ---------------------------------------------------------------------------
+_DARK_THEME_SS = """
+    QMainWindow, QWidget {
+        background: #1E1E1E;
+        color: #F0F0F0;
+    }
+    QDialog { background: #1E1E1E; color: #F0F0F0; }
+    QMenuBar { background: #2B2B2B; color: #F0F0F0; }
+    QMenuBar::item:selected { background: #3A3A3A; color: #FFFFFF; }
+    QMenu { background: #2B2B2B; color: #F0F0F0; border: 1px solid #555555; }
+    QMenu::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QMenu::item:disabled { color: #777777; }
+    QMenu::separator { height: 1px; background: #444444; margin: 3px 6px; }
+    QTabWidget::pane { background: #1E1E1E; border: 1px solid #3A3A3A; }
+    QTabBar::tab { background: #2B2B2B; color: #CCCCCC; min-width: 140px;
+                   padding: 4px 12px; border: 1px solid #3A3A3A; border-bottom: none; }
+    QTabBar::tab:selected { background: #1E1E1E; color: #FFFFFF; font-weight: bold; }
+    QTabBar::tab:hover:!selected { background: #353535; }
+    QStatusBar { background: #2B2B2B; color: #CCCCCC; }
+    QStatusBar QLabel { color: #CCCCCC; }
+    QDockWidget { color: #F0F0F0; }
+    QDockWidget::title { background: #1F4E79; color: #FFFFFF;
+                         padding: 4px 8px; font-weight: bold; }
+    QScrollBar:vertical { background: #2B2B2B; width: 10px; }
+    QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }
+    QScrollBar:horizontal { background: #2B2B2B; height: 10px; }
+    QScrollBar::handle:horizontal { background: #555555; border-radius: 5px; }
+    QPushButton { background: #3A3A3A; color: #F0F0F0;
+                  border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }
+    QPushButton:hover   { background: #4A4A4A; }
+    QPushButton:pressed { background: #2A2A2A; }
+    QPushButton:disabled { color: #666666; background: #2B2B2B; }
+    QDialogButtonBox QPushButton { min-width: 72px; }
+    QLineEdit { background: #2B2B2B; color: #F0F0F0;
+                border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }
+    QTextEdit, QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;
+                                 border: 1px solid #555555; }
+    QSpinBox { background: #2B2B2B; color: #F0F0F0;
+               border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }
+    QComboBox { background: #2B2B2B; color: #F0F0F0;
+                border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }
+    QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;
+                                   selection-background-color: #3D5A80;
+                                   selection-color: #FFFFFF; }
+    QTreeWidget { background: #252525; color: #F0F0F0; border: none;
+                  alternate-background-color: #2B2B2B; }
+    QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QTreeWidget::item:hover { background: #333333; }
+    QTableWidget { background: #252525; color: #F0F0F0;
+                   gridline-color: #3A3A3A; border: 1px solid #3A3A3A; }
+    QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QHeaderView::section { background: #2B2B2B; color: #F0F0F0;
+                            border: 1px solid #3A3A3A; padding: 3px 6px;
+                            font-weight: bold; }
+    QLabel { color: #F0F0F0; background: transparent; }
+    QGroupBox { color: #F0F0F0; border: 1px solid #555555;
+                border-radius: 4px; margin-top: 8px; padding-top: 8px; }
+    QGroupBox::title { color: #F0F0F0; subcontrol-origin: margin; left: 8px; }
+    QListWidget { background: #252525; color: #F0F0F0; border: 1px solid #3A3A3A; }
+    QListWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QCheckBox { color: #F0F0F0; }
+    QRadioButton { color: #F0F0F0; }
+    QToolTip { background: #2B2B2B; color: #F0F0F0; border: 1px solid #555555; }
+"""
+
+_LIGHT_THEME_SS = """
+    QMainWindow, QWidget {
+        background: #F5F5F5;
+        color: #1A1A1A;
+    }
+    QDialog { background: #F5F5F5; color: #1A1A1A; }
+    QMenuBar { background: #E8E8E8; color: #1A1A1A; }
+    QMenuBar::item:selected { background: #D0D8E8; color: #000000; }
+    QMenu { background: #FFFFFF; color: #1A1A1A; border: 1px solid #BBBBBB; }
+    QMenu::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QMenu::item:disabled { color: #999999; }
+    QMenu::separator { height: 1px; background: #CCCCCC; margin: 3px 6px; }
+    QTabWidget::pane { background: #F5F5F5; border: 1px solid #CCCCCC; }
+    QTabBar::tab { background: #E0E0E0; color: #333333; min-width: 140px;
+                   padding: 4px 12px; border: 1px solid #CCCCCC; border-bottom: none; }
+    QTabBar::tab:selected { background: #F5F5F5; color: #000000; font-weight: bold; }
+    QTabBar::tab:hover:!selected { background: #EFEFEF; }
+    QStatusBar { background: #E8E8E8; color: #333333; }
+    QStatusBar QLabel { color: #333333; }
+    QDockWidget { color: #1A1A1A; }
+    QDockWidget::title { background: #3D5A80; color: #FFFFFF;
+                         padding: 4px 8px; font-weight: bold; }
+    QScrollBar:vertical { background: #E0E0E0; width: 10px; }
+    QScrollBar::handle:vertical { background: #AAAAAA; border-radius: 5px; }
+    QScrollBar:horizontal { background: #E0E0E0; height: 10px; }
+    QScrollBar::handle:horizontal { background: #AAAAAA; border-radius: 5px; }
+    QPushButton { background: #E0E0E0; color: #1A1A1A;
+                  border: 1px solid #AAAAAA; border-radius: 4px; padding: 4px 10px; }
+    QPushButton:hover   { background: #D0D0D0; }
+    QPushButton:pressed { background: #C0C0C0; }
+    QPushButton:disabled { color: #999999; background: #EBEBEB; }
+    QDialogButtonBox QPushButton { min-width: 72px; }
+    QLineEdit { background: #FFFFFF; color: #1A1A1A;
+                border: 1px solid #AAAAAA; border-radius: 3px; padding: 2px 4px; }
+    QTextEdit, QPlainTextEdit { background: #FFFFFF; color: #1A1A1A;
+                                 border: 1px solid #AAAAAA; }
+    QSpinBox { background: #FFFFFF; color: #1A1A1A;
+               border: 1px solid #AAAAAA; border-radius: 3px; padding: 2px 4px; }
+    QComboBox { background: #FFFFFF; color: #1A1A1A;
+                border: 1px solid #AAAAAA; border-radius: 3px; padding: 2px 4px; }
+    QComboBox QAbstractItemView { background: #FFFFFF; color: #1A1A1A;
+                                   selection-background-color: #3D5A80;
+                                   selection-color: #FFFFFF; }
+    QTreeWidget { background: #FFFFFF; color: #1A1A1A; border: none;
+                  alternate-background-color: #F0F4FA; }
+    QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QTreeWidget::item:hover { background: #E8EEF8; }
+    QTableWidget { background: #FFFFFF; color: #1A1A1A;
+                   gridline-color: #DDDDDD; border: 1px solid #CCCCCC; }
+    QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QHeaderView::section { background: #E8E8E8; color: #1A1A1A;
+                            border: 1px solid #CCCCCC; padding: 3px 6px;
+                            font-weight: bold; }
+    QLabel { color: #1A1A1A; background: transparent; }
+    QGroupBox { color: #1A1A1A; border: 1px solid #AAAAAA;
+                border-radius: 4px; margin-top: 8px; padding-top: 8px; }
+    QGroupBox::title { color: #1A1A1A; subcontrol-origin: margin; left: 8px; }
+    QListWidget { background: #FFFFFF; color: #1A1A1A; border: 1px solid #CCCCCC; }
+    QListWidget::item:selected { background: #3D5A80; color: #FFFFFF; }
+    QCheckBox { color: #1A1A1A; }
+    QRadioButton { color: #1A1A1A; }
+    QToolTip { background: #FFFDE7; color: #1A1A1A; border: 1px solid #BBBBBB; }
+"""
+
+_DARK_TOOLBAR_SS = """
+    QToolBar { background: #252525; border-bottom: 1px solid #3A3A3A;
+               padding: 2px 4px; spacing: 2px; }
+    QToolButton { background: #2E2E2E; color: #CCCCCC;
+                  border: 1px solid #484848; border-bottom: 3px solid #181818;
+                  border-radius: 5px;
+                  padding: 4px 10px; font-size: 9pt; min-width: 44px; }
+    QToolButton:hover { background: #3A3A3A; color: #FFFFFF;
+                        border: 1px solid #5A8ABB; border-bottom: 3px solid #2D5A80; }
+    QToolButton:pressed { background: #1C1C1C; color: #AAAAAA;
+                          border: 1px solid #333333; border-top: 3px solid #111111;
+                          border-bottom: 1px solid #484848;
+                          padding: 5px 9px 3px 11px; }
+    QToolButton:checked { background: #1A3A5C; color: #7EC8F0;
+                          border: 1px solid #3D5A80; border-bottom: 3px solid #1A3A5C; }
+    QToolButton:disabled { background: #252525; color: #484848;
+                           border: 1px solid #333333; border-bottom: 3px solid #141414; }
+    QToolBar::separator { background: #3A3A3A; width: 1px; margin: 4px 6px; }
+"""
+
+_LIGHT_TOOLBAR_SS = """
+    QToolBar { background: #E8E8E8; border-bottom: 1px solid #CCCCCC;
+               padding: 2px 4px; spacing: 2px; }
+    QToolButton { background: #F5F5F5; color: #333333;
+                  border: 1px solid #C0C0C0; border-bottom: 3px solid #999999;
+                  border-radius: 5px;
+                  padding: 4px 10px; font-size: 9pt; min-width: 44px; }
+    QToolButton:hover { background: #EBF3FC; color: #000000;
+                        border: 1px solid #5A8ABB; border-bottom: 3px solid #3D6FA0; }
+    QToolButton:pressed { background: #D5D5D5; color: #111111;
+                          border: 1px solid #AAAAAA; border-top: 3px solid #888888;
+                          border-bottom: 1px solid #C8C8C8;
+                          padding: 5px 9px 3px 11px; }
+    QToolButton:checked { background: #C8DCEC; color: #1A3A5C;
+                          border: 1px solid #5A8ABB; border-bottom: 3px solid #3D6FA0; }
+    QToolButton:disabled { background: #EBEBEB; color: #BBBBBB;
+                           border: 1px solid #D8D8D8; border-bottom: 3px solid #C0C0C0; }
+    QToolBar::separator { background: #CCCCCC; width: 1px; margin: 4px 6px; }
+"""
+
+_DARK_DOCK_SS = """
+    QDockWidget::title { background:#1F4E79; color:white;
+                         padding:4px 8px; font-weight:bold; }
+"""
+
+_LIGHT_DOCK_SS = """
+    QDockWidget::title { background:#3D5A80; color:white;
+                         padding:4px 8px; font-weight:bold; }
+"""
+
 # ─────────────────────────────────────────────────────────────────────
 # TextCommentEditDialog — edit or create a text comment marker
 # ─────────────────────────────────────────────────────────────────────
@@ -49,21 +245,6 @@ class TextCommentEditDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Text Comment")
         self.setMinimumWidth(400)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self.delete_requested = False
         self._page = page
         
@@ -105,72 +286,55 @@ class TextCommentEditDialog(QDialog):
         return self.text_edit.toPlainText().strip()
     
 # ---------------------------------------------------------------------------
-# MarkerEditDialog  — view info, edit signal type, or delete
+# MarkerEditDialog  — edit a signal typical marker
 # ---------------------------------------------------------------------------
 class MarkerEditDialog(QDialog):
     """
-    Opens when a marker is clicked.
-    Returns QDialog.Accepted  → caller should save the new type.
-    Returns QDialog.Rejected  → no change  (Cancel pressed).
-    delete_requested property → True if the user pressed Delete.
+    Opens when a marker is right-click -> Edit.
+    Shows the full Signal Typical details; all fields are editable except
+    Control Module Name, Field Device Name, Signal Name column, Type column.
+    The count (multiplier) spinner is NOT shown.
+    Any extra columns defined in the Signal Typical configuration are
+    displayed and editable here too.
     """
+
+    @staticmethod
+    def _ro_colors() -> tuple:
+        """Return (bg QColor, fg QColor) for read-only cells, respecting the current theme."""
+        palette = QApplication.instance().palette()
+        is_dark = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        if is_dark:
+            return QColor("#2A2A2A"), QColor("#888888")
+        return QColor("#E0E0E0"), QColor("#555555")
 
     def __init__(self, marker: dict, signal_types: list[dict], parent=None):
         super().__init__(parent)
-        
-        self.setWindowTitle("Signal Composition - Edit")
-        
-        self.setFixedWidth(420)
+        self.setWindowTitle("Edit Signal Typical")
+        self.setMinimumSize(700, 560)
         self.delete_requested = False
         self._signal_types = signal_types
         self._marker = marker
-        
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
 
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form.setVerticalSpacing(10)
-        form.setContentsMargins(16, 16, 16, 8)
+        lay = QVBoxLayout()
+        lay.setContentsMargins(16, 14, 16, 10)
+        lay.setSpacing(10)
+        self.setLayout(lay)
 
-        # ── Build form for composition marker ──────────────────────────
-        self._build_composition_form(form, marker)
+        composition_id = marker.get("composition_id")
+        self._composition = (db_load_signal_composition(composition_id)
+                             if composition_id else None)
 
-        # Read-only page info (both types)
+        if not self._composition:
+            lay.addWidget(QLabel("Warning: Signal Typical not found in configuration."))
+        else:
+            self._build_composition_form(lay)
+
+        # Page info
         page_lbl = QLabel(f"<b>Page:</b> {marker['page'] + 1}")
         page_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        form.addRow(page_lbl)
+        lay.addWidget(page_lbl)
 
-        # Buttons: OK / Delete / Cancel
+        # Buttons
         buttons = QDialogButtonBox()
         ok_btn     = buttons.addButton(QDialogButtonBox.StandardButton.Ok)
         cancel_btn = buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
@@ -179,273 +343,163 @@ class MarkerEditDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         del_btn.clicked.connect(self._on_delete)
         del_btn.setStyleSheet("color: #B71C1C; font-weight: bold;")
+        lay.addWidget(buttons)
 
-        outer = QVBoxLayout()
-        outer.setContentsMargins(16, 14, 16, 8)
-        outer.addLayout(form)
-        outer.addWidget(buttons)
-        self.setLayout(outer)
+    def _build_composition_form(self, lay: QVBoxLayout):
+        comp = self._composition
+        tag_parts = self._marker.get("tag_parts", {})
+
+        # Title
+        composition_text = _get_signal_composition(comp)
+        title_lbl = QLabel(
+            f"<b>{comp['title']}</b>"
+            + (f"  <span style='color:#7EC8F0;'>{composition_text}</span>"
+               if composition_text else ""))
+        title_lbl.setStyleSheet("font-size: 11pt;")
+        lay.addWidget(title_lbl)
+
+        # Description
+        desc_row = QHBoxLayout()
+        desc_row.addWidget(QLabel("<b>Description:</b>"))
+        self.desc_edit = QLineEdit(
+            tag_parts.get("description", comp.get("description", "")))
+        desc_row.addWidget(self.desc_edit)
+        lay.addLayout(desc_row)
+
+        # Control Module + Field Device side by side
+        cm_fd_lay = QHBoxLayout()
+
+        cm_group = QGroupBox("Control Module")
+        cm_group.setStyleSheet(
+            "QGroupBox{border:1px solid #555;border-radius:4px;margin-top:6px;"
+            "color:#F0F0F0;font-weight:bold;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}")
+        cm_form = QFormLayout(cm_group)
+        cm_form.setContentsMargins(8, 8, 8, 4)
+        cm_form.setSpacing(4)
+        _cm_name_lbl = QLabel(comp.get("control_module", "NA") or "NA")
+        _cm_name_lbl.setStyleSheet("color:#AAAAAA;")
+        cm_form.addRow("Name:", _cm_name_lbl)
+        self.cm_type_edit = QLineEdit(
+            tag_parts.get("cm_type", comp.get("cm_type", "NA") or "NA"))
+        self.cm_desc_edit = QLineEdit(
+            tag_parts.get("cm_description", comp.get("cm_description", "NA") or "NA"))
+        cm_form.addRow("Type:", self.cm_type_edit)
+        cm_form.addRow("Description:", self.cm_desc_edit)
+        cm_fd_lay.addWidget(cm_group)
+
+        fd_group = QGroupBox("Field Device")
+        fd_group.setStyleSheet(
+            "QGroupBox{border:1px solid #555;border-radius:4px;margin-top:6px;"
+            "color:#F0F0F0;font-weight:bold;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}")
+        fd_form = QFormLayout(fd_group)
+        fd_form.setContentsMargins(8, 8, 8, 4)
+        fd_form.setSpacing(4)
+        _fd_name_lbl = QLabel(comp.get("field_device", "NA") or "NA")
+        _fd_name_lbl.setStyleSheet("color:#AAAAAA;")
+        fd_form.addRow("Name:", _fd_name_lbl)
+        self.fd_type_edit = QLineEdit(
+            tag_parts.get("fd_type", comp.get("fd_type", "NA") or "NA"))
+        self.fd_desc_edit = QLineEdit(
+            tag_parts.get("fd_description", comp.get("fd_description", "NA") or "NA"))
+        fd_form.addRow("Type:", self.fd_type_edit)
+        fd_form.addRow("Description:", self.fd_desc_edit)
+        cm_fd_lay.addWidget(fd_group)
+        lay.addLayout(cm_fd_lay)
+
+        # Signals table — mirrors SignalCompositionConfigDialog layout
+        extra_headers = comp.get("extra_column_headers", [])
+        fixed_cols = ["Signal Name", "Type", "Description", "Prefix", "Suffix"]
+        all_headers = fixed_cols + extra_headers
+        lay.addWidget(QLabel("<b>Signals:</b>"))
+        self.signals_table = QTableWidget(0, len(all_headers))
+        self.signals_table.setHorizontalHeaderLabels(all_headers)
+        hdr = self.signals_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        for ci in range(3, len(all_headers)):
+            hdr.setSectionResizeMode(ci, QHeaderView.ResizeMode.Interactive)
+        self.signals_table.setColumnWidth(0, 110)
+        self.signals_table.setColumnWidth(1, 80)
+        self.signals_table.verticalHeader().setVisible(False)
+        self.signals_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        self.signals_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked)
+
+        overrides = tag_parts.get("signal_overrides", [])
+        signals = comp.get("signals", [])
+        ro_bg, ro_fg = self._ro_colors()
+        for i, sig in enumerate(signals):
+            ov = overrides[i] if i < len(overrides) else {}
+            r = self.signals_table.rowCount()
+            self.signals_table.insertRow(r)
+
+            # Read-only: Signal Name (col 0), Type (col 1)
+            for ci, val in enumerate([sig.get("signal_name", ""),
+                                       sig.get("signal_type", "")]):
+                item = QTableWidgetItem(val)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                item.setBackground(QBrush(ro_bg))
+                item.setForeground(QBrush(ro_fg))
+                self.signals_table.setItem(r, ci, item)
+
+            # Editable: Description (2), Prefix (3), Suffix (4)
+            self.signals_table.setItem(r, 2, QTableWidgetItem(
+                ov.get("signal_description", sig.get("signal_description", ""))))
+            self.signals_table.setItem(r, 3, QTableWidgetItem(
+                ov.get("prefix", sig.get("prefix", "NA"))))
+            self.signals_table.setItem(r, 4, QTableWidgetItem(
+                ov.get("suffix", sig.get("suffix", "NA"))))
+
+            # Extra columns (editable)
+            ov_extras = ov.get("extra_column_values",
+                               sig.get("extra_column_values", []))
+            for ec in range(len(extra_headers)):
+                val = ov_extras[ec] if ec < len(ov_extras) else ""
+                self.signals_table.setItem(r, 5 + ec, QTableWidgetItem(val))
+
+        lay.addWidget(self.signals_table, stretch=1)
 
     def _on_delete(self):
         self.delete_requested = True
         self.accept()
-    
-    def _build_composition_form(self, form: QFormLayout, marker: dict):
-        """Build the form for editing composition markers."""
-        composition_id = marker.get("composition_id")
-        composition = db_load_signal_composition(composition_id) if composition_id else None
 
-        if not composition:
-            form.addRow(QLabel("⚠️ Composition not found in configuration"))
-            return
-
-        # Composition name (read-only)
-        composition_text = _get_signal_composition(composition)
-        obj_name_lbl = QLabel(f"<b>{composition['title']}</b>  ({composition_text})")
-        obj_name_lbl.setStyleSheet("font-size: 10pt; color:#7EC8F0;")
-        form.addRow("<b>Composition:</b>", obj_name_lbl)
-
-        if composition['description']:
-            comment_lbl = QLabel(composition['description'])
-            comment_lbl.setStyleSheet("color:#AAAAAA; font-size: 9pt;")
-            form.addRow("", comment_lbl)
-
-        # ── Count field ────────────────────────────────────────────────
-        form.addRow(QLabel("<b>Tag Configuration:</b>"))
-
-        tag_parts = marker.get("tag_parts", {})
-
-        # Count
-        count_widget = QWidget()
-        count_layout = QHBoxLayout(count_widget)
-        count_layout.setContentsMargins(0, 0, 0, 0)
-        count_layout.setSpacing(6)
-
-        self.count_spin = QSpinBox()
-        self.count_spin.setMinimum(1)
-        self.count_spin.setMaximum(999)
-        self.count_spin.setValue(int(tag_parts.get("count", marker.get("count", 1))))
-        self.count_spin.setMaximumWidth(80)
-        self.count_spin.valueChanged.connect(self._update_composition_preview)
-        count_layout.addWidget(self.count_spin)
-        count_layout.addWidget(QLabel("(multiplier for all signals)"))
-        count_layout.addStretch()
-        form.addRow("<b>Count:</b>", count_widget)
-
-        # Prefix
-        self.prefix_edit = QLineEdit(tag_parts.get("prefix", ""))
-        self.prefix_edit.setPlaceholderText("e.g., 7600")
-        self.prefix_edit.setMaximumWidth(150)
-        self.prefix_edit.textChanged.connect(self._update_composition_preview)
-        form.addRow("<b>Prefix:</b>", self.prefix_edit)
-
-        # Suffix
-        self.suffix_edit = QLineEdit(tag_parts.get("suffix", ""))
-        self.suffix_edit.setPlaceholderText("e.g., B")
-        self.suffix_edit.setMaximumWidth(150)
-        self.suffix_edit.textChanged.connect(self._update_composition_preview)
-        form.addRow("<b>Suffix:</b>", self.suffix_edit)
-
-        # Middle fields
-        self._middle_field_edits = []
-
-        middle_widget = QWidget()
-        self.middle_fields_layout_edit = QVBoxLayout(middle_widget)
-        self.middle_fields_layout_edit.setSpacing(4)
-        self.middle_fields_layout_edit.setContentsMargins(0, 0, 0, 0)
-
-        existing_middle = tag_parts.get("middle_fields", [])
-        for field_value in existing_middle:
-            self._add_middle_field_edit(field_value)
-
-        form.addRow("<b>Middle Fields:</b>", middle_widget)
-
-        # Middle field buttons
-        middle_btn_widget = QWidget()
-        middle_btn_layout = QHBoxLayout(middle_btn_widget)
-        middle_btn_layout.setContentsMargins(0, 0, 0, 0)
-        middle_btn_layout.setSpacing(6)
-
-        add_middle_btn = QPushButton("➕ Add Field")
-        add_middle_btn.setMaximumWidth(120)
-        add_middle_btn.clicked.connect(lambda: self._add_middle_field_edit(""))
-
-        clear_middle_btn = QPushButton("🗑 Clear")
-        clear_middle_btn.setMaximumWidth(80)
-        clear_middle_btn.clicked.connect(self._clear_middle_fields_edit)
-
-        middle_btn_layout.addWidget(add_middle_btn)
-        middle_btn_layout.addWidget(clear_middle_btn)
-        middle_btn_layout.addStretch()
-        form.addRow("", middle_btn_widget)
-
-        # Signals preview
-        form.addRow(QLabel("<b>Complete tags for each signal:</b>"))
-
-        self.signals_preview_list = QListWidget()
-        self.signals_preview_list.setMaximumHeight(180)
-        self.signals_preview_list.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.signals_preview_list.setSelectionMode(
-            QAbstractItemView.SelectionMode.NoSelection)
-
-        form.addRow("", self.signals_preview_list)
-
-        self._update_composition_preview()
-        
-    def _add_middle_field_edit(self, value: str = ""):
-        """Add a middle field editor in the edit dialog."""
-        field_num = len(self._middle_field_edits) + 1
-        field_layout = QHBoxLayout()
-        
-        label = QLabel(f"F{field_num}:")
-        label.setMaximumWidth(30)
-        
-        field_edit = QLineEdit(value)
-        field_edit.setPlaceholderText("e.g., 014")
-        field_edit.setMaximumWidth(100)
-        field_edit.textChanged.connect(self._update_composition_preview)
-        
-        remove_btn = QPushButton("✕")
-        remove_btn.setMaximumWidth(30)
-        remove_btn.setStyleSheet(
-            "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
-            " border-radius:3px; font-size: 8pt; }"
-            "QPushButton:hover { background:#5A1A1A; }")
-        remove_btn.clicked.connect(lambda: self._remove_middle_field_edit(field_edit))
-        
-        field_layout.addWidget(label)
-        field_layout.addWidget(field_edit)
-        field_layout.addWidget(remove_btn)
-        field_layout.addStretch()
-        
-        self.middle_fields_layout_edit.addLayout(field_layout)
-        self._middle_field_edits.append(field_edit)
-
-    def _remove_middle_field_edit(self, field_edit: QLineEdit):
-        """Remove a middle field from the edit dialog."""
-        if field_edit in self._middle_field_edits:
-            self._middle_field_edits.remove(field_edit)
-            field_edit.deleteLater()
-            self._update_composition_preview()
-
-    def _clear_middle_fields_edit(self):
-        """Clear all middle fields in the edit dialog."""
-        for field_edit in self._middle_field_edits:
-            field_edit.deleteLater()
-        self._middle_field_edits.clear()
-        self._update_composition_preview()
-
-    def _update_composition_preview(self):
-        """Update the signals preview in the edit dialog."""
-        if not hasattr(self, 'signals_preview_list'):
-            return
-        
-        self.signals_preview_list.clear()
-        
-        composition_id = self._marker.get("composition_id")
-        composition = db_load_signal_composition(composition_id) if composition_id else None
-        
-        if not composition:
-            return
-        
-        prefix = self.prefix_edit.text().strip()
-        suffix = self.suffix_edit.text().strip()
-        middle_fields = [f.text().strip() for f in self._middle_field_edits if f.text().strip()]
-        
-        for sig in composition['signals']:
-            # Build tag: prefix-SIGNAL-middle_fields-suffix
-            parts = []
-            
-            if prefix:
-                parts.append(prefix)
-            
-            parts.append(sig['signal_name'])
-            
-            if middle_fields:
-                parts.extend(middle_fields)
-            
-            if suffix:
-                parts.append(suffix)
-            
-            signal_tag = "-".join(parts)
-            display = f"{signal_tag}  ({sig['signal_type']})  —  {sig.get('signal_description', '')}"
-            self.signals_preview_list.addItem(display)
-    
-    def _update_complex_signals_table(self, table: QTableWidget, complex_obj: dict):
-        """Update the signals table when base tag changes."""
-        base_tag = self.base_tag_edit.text().strip()
-        for r, sig in enumerate(complex_obj['signals']):
-            full_tag = f"{base_tag}-{sig['signal']}" if base_tag else sig['signal']
-            table.item(r, 0).setText(full_tag)
-
-    def _on_type_changed(self, text: str) -> None:
-        """Auto-fill description from config when user picks a predefined type."""
-        comment = self._label_comment_map.get(text.strip(), "")
-        self.comment_edit.setText(comment)
-
-    def _add_desc_field(self, text: str = "") -> None:
-        if len(self._desc_edits) >= 5:
-            return
-        row = QHBoxLayout()
-        edit = QLineEdit(text)
-        edit.setPlaceholderText(f"Note {len(self._desc_edits) + 1}…")
-        rm_btn = QPushButton("✕")
-        rm_btn.setFixedWidth(24)
-        rm_btn.setStyleSheet(
-            "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
-            " border-radius:3px; font-size: 8pt; }"
-            "QPushButton:hover { background:#5A1A1A; }")
-        if not self._desc_edits:
-            rm_btn.setVisible(False)
-        rm_btn.clicked.connect(lambda: self._remove_desc_field(row, edit))
-        row.addWidget(edit)
-        row.addWidget(rm_btn)
-        self._desc_layout.addLayout(row)
-        self._desc_edits.append(edit)
-        self._add_desc_btn.setEnabled(len(self._desc_edits) < 5)
-        self.adjustSize()
-
-    def _remove_desc_field(self, row_layout, edit):
-        if len(self._desc_edits) <= 1:
-            return
-        self._desc_edits.remove(edit)
-        while row_layout.count():
-            item = row_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self._desc_layout.removeItem(row_layout)
-        for i, e in enumerate(self._desc_edits):
-            e.setPlaceholderText(f"Note {i + 1}…")
-        self._add_desc_btn.setEnabled(len(self._desc_edits) < 5)
-        self.adjustSize()
-
-    @property
-    def selected_type(self) -> str:
-        return self.type_combo.currentText().strip()
-
-    @property
-    def selected_comment(self) -> str:
-        return self.comment_edit.text().strip()
-
-    @property
-    def selected_count(self) -> int:
-        return self.count_spin.value()
-
-    @property
-    def selected_description(self) -> str:
-        parts = [e.text().strip() for e in self._desc_edits if e.text().strip()]
-        return " | ".join(parts)
-    
     @property
     def tag_parts(self) -> dict:
-        """Return the tag parts for composition markers."""
+        """Return all editable overrides (no count)."""
+        if not self._composition:
+            return {}
+        extra_headers = self._composition.get("extra_column_headers", [])
+        overrides = []
+        for r in range(self.signals_table.rowCount()):
+            ev = [
+                (self.signals_table.item(r, 5 + ec) or QTableWidgetItem()).text()
+                for ec in range(len(extra_headers))
+            ]
+            overrides.append({
+                "signal_description": (self.signals_table.item(r, 2) or QTableWidgetItem()).text(),
+                "prefix":             (self.signals_table.item(r, 3) or QTableWidgetItem()).text(),
+                "suffix":             (self.signals_table.item(r, 4) or QTableWidgetItem()).text(),
+                "extra_column_values": ev,
+            })
         return {
-            "prefix": self.prefix_edit.text().strip(),
-            "middle_fields": [f.text().strip() for f in self._middle_field_edits if f.text().strip()],
-            "suffix": self.suffix_edit.text().strip(),
-            "count": self.count_spin.value(),
+            "description":    self.desc_edit.text().strip(),
+            "cm_type":        self.cm_type_edit.text().strip(),
+            "cm_description": self.cm_desc_edit.text().strip(),
+            "fd_type":        self.fd_type_edit.text().strip(),
+            "fd_description": self.fd_desc_edit.text().strip(),
+            "signal_overrides": overrides,
         }
+
+    @property
+    def count(self) -> int:
+        """Return existing count (not editable here)."""
+        return int(self._marker.get("tag_parts", {}).get(
+            "count", self._marker.get("count", 1)))
 
 
     # ---------------------------------------------------------------------------
@@ -476,21 +530,6 @@ class MarkerCountDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(f"Configure {label}")
         self.setMinimumWidth(450)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QSpinBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self._descriptions = []
         self._label = label
         self._comment = comment
@@ -901,30 +940,6 @@ class MarkerOverlay(QWidget):
     # ------------------------------------------------------------------
     def _show_marker_menu(self, marker: dict, global_pos) -> None:
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item {
-                background: transparent;
-                color: #F0F0F0;
-                padding: 5px 24px 5px 12px;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled { color: #777777; }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-        """)
-
-        info_act   = menu.addAction("ℹ️  View Info")
         edit_act   = menu.addAction("✏️  Edit…")
         menu.addSeparator()
         copy_act   = menu.addAction("📋  Copy  Ctrl+C")
@@ -947,9 +962,7 @@ class MarkerOverlay(QWidget):
         if not chosen:
             return
 
-        if chosen is info_act:
-            self._show_marker_info(marker)
-        elif chosen is edit_act:
+        if chosen is edit_act:
             self._open_edit_dialog(marker)
         elif chosen is copy_act:
             self._copy_marker(marker)
@@ -1048,40 +1061,39 @@ class MarkerOverlay(QWidget):
                 self.update()
         
         elif marker.get("is_composition"):
-            # ── Composition marker dialog ──────────────────────────────
-            composition = db_load_signal_composition(marker["composition_id"])
-            if not composition:
-                return
-
-            dlg = CompositionPlacementDialog(
-                composition, parent=self,
-                tag_parts=marker.get("tag_parts", {}))
-            dlg.setWindowTitle(f"Edit {composition['title']}")
-
+            # ── Composition marker edit dialog ─────────────────────────
+            dlg = MarkerEditDialog(marker, [], parent=self)
             if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            if dlg.delete_requested:
+                self._push_undo_fn()
+                self._markers.remove(marker)
+                if self._selected_marker is marker:
+                    self._selected_marker = None
+                self.markers_changed.emit()
+                self.update()
                 return
 
             self._push_undo_fn()
-
             new_tag_parts = dlg.tag_parts
-            new_count     = dlg.count
+            # Preserve the existing count (not editable in this dialog)
+            new_tag_parts["count"] = dlg.count
 
-            # Rebuild display_text the same way _register_composition does
-            signal_counts = {}
-            for sig in composition.get("signals", []):
-                sig_type = sig.get("signal_type", "")
-                signal_counts[sig_type] = signal_counts.get(sig_type, 0) + new_count
-
-            parts = []
-            for sig_type in sorted(signal_counts.keys()):
-                sig_count = signal_counts[sig_type]
-                parts.append(f"{sig_count}{sig_type}")
-            display_text = " ".join(parts) if parts else composition["title"]
+            composition = dlg._composition
+            new_count   = dlg.count
+            if composition:
+                signal_counts = {}
+                for sig in composition.get("signals", []):
+                    sig_type = sig.get("signal_type", "")
+                    if sig_type:
+                        sig_count = int(sig.get("count", 1) or 1)
+                        signal_counts[sig_type] = signal_counts.get(sig_type, 0) + sig_count * new_count
+                parts = [f"{c}{t}" for t, c in sorted(signal_counts.items())]
+                display_text = " ".join(parts) if parts else composition["title"]
+                marker["type"] = display_text
 
             marker["tag_parts"] = new_tag_parts
             marker["count"]     = new_count
-            marker["type"]      = display_text  # update the display label
-
             self.markers_changed.emit()
             self.update()
         
@@ -1415,28 +1427,6 @@ class DraggablePdfView(QPdfView):
 
         # ── Marker mode: signal composition cascade ─────────────────────────
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item {
-                background: transparent;
-                color: #F0F0F0;
-                padding: 5px 24px 5px 12px;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled { color: #777777; }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-        """)
 
         # ── Paste option ────────────────────────────────────────────────────
         if self._overlay._clipboard:
@@ -1445,28 +1435,6 @@ class DraggablePdfView(QPdfView):
             menu.addSeparator()
 
        # ── Signal Compositions Section ──────────────────────────────────────────
-        _submenu_style = """
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item {
-                background: transparent;
-                color: #F0F0F0;
-                padding: 5px 24px 5px 12px;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled { color: #777777; }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-        """
 
         default_owner_id = db_ensure_default_owner()
         default_compositions = db_load_compositions_by_owner(default_owner_id)
@@ -1479,14 +1447,13 @@ class DraggablePdfView(QPdfView):
         )
 
         if not has_any_composition:
-            no_comp_act = menu.addAction("(No compositions configured)")
+            no_comp_act = menu.addAction("(No typicals configured)")
             no_comp_act.setEnabled(False)
             menu.addSeparator()
         else:
             # ── Default submenu ────────────────────────────────────────────────
             if default_compositions:
                 default_submenu = QMenu("Default", menu)
-                default_submenu.setStyleSheet(_submenu_style)
 
                 for comp in default_compositions:
                     composition_text = _get_signal_composition(comp)
@@ -1508,7 +1475,6 @@ class DraggablePdfView(QPdfView):
                     continue
 
                 proj_submenu = QMenu(pg["project_name"], menu)
-                proj_submenu.setStyleSheet(_submenu_style)
 
                 for comp in project_compositions:
                     composition_text = _get_signal_composition(comp)
@@ -1781,7 +1747,13 @@ def _write_fdf(fdf_path: str, pdf_path: str, markers: list[dict]) -> None:
         else:
             # ── Sticky-note Text annotation for IO markers ───────────────
             count   = int(m.get("count", 1))
-            label   = f"{count}{m['type']}" if count > 1 else m["type"]
+            # Composition markers store the fully-expanded label in m['type']
+            # (e.g. "4HDI 2HDO" when count=2 on a "2HDI 1HDO" composition),
+            # so never prepend count again.  Simple markers do need the prefix.
+            if m.get("is_composition"):
+                label = m["type"]
+            else:
+                label = f"{count}{m['type']}" if count > 1 else m["type"]
             comment = m.get("comment", "")
             desc    = m.get("description", "")
             parts   = [label]
@@ -1952,11 +1924,13 @@ def _db_connect() -> sqlite3.Connection:
                     # Create new table WITHOUT UNIQUE constraint
                     con.execute("""
                         CREATE TABLE signal_compositions (
-                            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                            title       TEXT    NOT NULL,
-                            description TEXT    NOT NULL DEFAULT '',
-                            created     TEXT    NOT NULL,
-                            modified    TEXT    NOT NULL
+                            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                            title           TEXT    NOT NULL,
+                            description     TEXT    NOT NULL DEFAULT '',
+                            control_module  TEXT    NOT NULL DEFAULT 'NA',
+                            field_device    TEXT    NOT NULL DEFAULT 'NA',
+                            created         TEXT    NOT NULL,
+                            modified        TEXT    NOT NULL
                         )
                     """)
 
@@ -1978,6 +1952,8 @@ def _db_connect() -> sqlite3.Connection:
                             signal_name        TEXT    NOT NULL,
                             signal_type        TEXT    NOT NULL,
                             signal_description TEXT    NOT NULL DEFAULT '',
+                            prefix             TEXT    NOT NULL DEFAULT 'NA',
+                            suffix             TEXT    NOT NULL DEFAULT 'NA',
                             sort_order         INTEGER NOT NULL DEFAULT 0
                         )
                     """)
@@ -2005,22 +1981,26 @@ def _db_connect() -> sqlite3.Connection:
             # Table doesn't exist yet — create fresh
             con.execute("""
                 CREATE TABLE IF NOT EXISTS signal_compositions (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title       TEXT    NOT NULL,
-                    description TEXT    NOT NULL DEFAULT '',
-                    created     TEXT    NOT NULL,
-                    modified    TEXT    NOT NULL
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title           TEXT    NOT NULL,
+                    description     TEXT    NOT NULL DEFAULT '',
+                    control_module  TEXT    NOT NULL DEFAULT 'NA',
+                    field_device    TEXT    NOT NULL DEFAULT 'NA',
+                    created         TEXT    NOT NULL,
+                    modified        TEXT    NOT NULL
                 )
             """)
     except Exception as e:
         print(f"Signal compositions table setup error: {e}")
         con.execute("""
             CREATE TABLE IF NOT EXISTS signal_compositions (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                title       TEXT    NOT NULL,
-                description TEXT    NOT NULL DEFAULT '',
-                created     TEXT    NOT NULL,
-                modified    TEXT    NOT NULL
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                title           TEXT    NOT NULL,
+                description     TEXT    NOT NULL DEFAULT '',
+                control_module  TEXT    NOT NULL DEFAULT 'NA',
+                field     TEXT    NOT NULL DEFAULT 'NA',
+                created         TEXT    NOT NULL,
+                modified        TEXT    NOT NULL
             )
         """)
     
@@ -2034,7 +2014,89 @@ def _db_connect() -> sqlite3.Connection:
             con.commit()
     except:
         pass
-    
+
+    # ── Migrate signal_compositions: add control_module / field_device / extended columns ──
+    try:
+        existing_cols = [
+            row[1]
+            for row in con.execute("PRAGMA table_info(signal_compositions)").fetchall()
+        ]
+        if "control_module" not in existing_cols:
+            con.execute(
+                "ALTER TABLE signal_compositions "
+                "ADD COLUMN control_module TEXT NOT NULL DEFAULT 'NA'"
+            )
+            con.commit()
+        if "field_device" not in existing_cols:
+            con.execute(
+                "ALTER TABLE signal_compositions "
+                "ADD COLUMN field_device TEXT NOT NULL DEFAULT 'NA'"
+            )
+            con.commit()
+        # Extended fields: control module type/description, field device type/description
+        for col_def in (
+            ("cm_type",        "TEXT NOT NULL DEFAULT 'NA'"),
+            ("cm_description", "TEXT NOT NULL DEFAULT 'NA'"),
+            ("fd_type",        "TEXT NOT NULL DEFAULT 'NA'"),
+            ("fd_description", "TEXT NOT NULL DEFAULT 'NA'"),
+            ("category",       "TEXT NOT NULL DEFAULT ''"),
+        ):
+            if col_def[0] not in existing_cols:
+                con.execute(
+                    f"ALTER TABLE signal_compositions ADD COLUMN {col_def[0]} {col_def[1]}"
+                )
+                con.commit()
+    except Exception as e:
+        print(f"signal_compositions column migration error (non-fatal): {e}")
+
+    # ── Migrate signal_composition_signals: add prefix / suffix / extra_column_values columns ──
+    try:
+        existing_sig_cols = [
+            row[1]
+            for row in con.execute("PRAGMA table_info(signal_composition_signals)").fetchall()
+        ]
+        if "prefix" not in existing_sig_cols:
+            con.execute(
+                "ALTER TABLE signal_composition_signals "
+                "ADD COLUMN prefix TEXT NOT NULL DEFAULT 'NA'"
+            )
+            con.commit()
+        if "suffix" not in existing_sig_cols:
+            con.execute(
+                "ALTER TABLE signal_composition_signals "
+                "ADD COLUMN suffix TEXT NOT NULL DEFAULT 'NA'"
+            )
+            con.commit()
+        if "extra_column_values" not in existing_sig_cols:
+            con.execute(
+                "ALTER TABLE signal_composition_signals "
+                "ADD COLUMN extra_column_values TEXT NOT NULL DEFAULT '[]'"
+            )
+            con.commit()
+        if "count" not in existing_sig_cols:
+            con.execute(
+                "ALTER TABLE signal_composition_signals "
+                "ADD COLUMN count INTEGER NOT NULL DEFAULT 1"
+            )
+            con.commit()
+    except Exception as e:
+        print(f"signal_composition_signals column migration error (non-fatal): {e}")
+
+    # ── Migrate signal_compositions: add extra_column_headers column ──────
+    try:
+        existing_comp_cols = [
+            row[1]
+            for row in con.execute("PRAGMA table_info(signal_compositions)").fetchall()
+        ]
+        if "extra_column_headers" not in existing_comp_cols:
+            con.execute(
+                "ALTER TABLE signal_compositions "
+                "ADD COLUMN extra_column_headers TEXT NOT NULL DEFAULT '[]'"
+            )
+            con.commit()
+    except Exception as e:
+        print(f"signal_compositions extra_column_headers migration error (non-fatal): {e}")
+
     # ── Other tables (these should be fine) ───────────────────────────────
     con.execute("""
         CREATE TABLE IF NOT EXISTS signal_composition_signals (
@@ -2043,6 +2105,10 @@ def _db_connect() -> sqlite3.Connection:
             signal_name     TEXT    NOT NULL,
             signal_type     TEXT    NOT NULL,
             signal_description TEXT NOT NULL DEFAULT '',
+            prefix          TEXT    NOT NULL DEFAULT 'NA',
+            suffix          TEXT    NOT NULL DEFAULT 'NA',
+            extra_column_values TEXT NOT NULL DEFAULT '[]',
+            count           INTEGER NOT NULL DEFAULT 1,
             sort_order      INTEGER NOT NULL DEFAULT 0
         )
     """)
@@ -2166,6 +2232,150 @@ def _db_connect() -> sqlite3.Connection:
 
     con.commit()
     return con
+
+
+# ---------------------------------------------------------------------------
+# Settings DB helpers  (theme persistence)
+# ---------------------------------------------------------------------------
+def _ensure_settings_table(con: sqlite3.Connection) -> None:
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+    con.commit()
+
+
+def db_load_theme() -> str:
+    """Return the saved theme name ('dark', 'light', or 'system'). Defaults to 'dark'."""
+    with _db_connect() as con:
+        _ensure_settings_table(con)
+        row = con.execute(
+            "SELECT value FROM app_settings WHERE key = 'theme'"
+        ).fetchone()
+    return row[0] if row else "dark"
+
+
+def db_save_theme(theme: str) -> None:
+    """Persist the active theme name."""
+    with _db_connect() as con:
+        _ensure_settings_table(con)
+        con.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('theme', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (theme,))
+        con.commit()
+
+
+# ---------------------------------------------------------------------------
+# Signal Typical Templates DB helpers
+# ---------------------------------------------------------------------------
+def _ensure_templates_table(con: sqlite3.Connection) -> None:
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS signal_typical_templates (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            title       TEXT    NOT NULL,
+            description TEXT    NOT NULL DEFAULT '',
+            created     TEXT    NOT NULL,
+            modified    TEXT    NOT NULL
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS signal_typical_template_signals (
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id        INTEGER NOT NULL
+                               REFERENCES signal_typical_templates(id) ON DELETE CASCADE,
+            signal_name        TEXT    NOT NULL,
+            signal_type        TEXT    NOT NULL,
+            signal_description TEXT    NOT NULL DEFAULT '',
+            sort_order         INTEGER NOT NULL DEFAULT 0
+        )
+    """)
+    con.commit()
+
+
+def db_load_all_templates() -> dict:
+    """Return all signal typical templates keyed by id."""
+    with _db_connect() as con:
+        _ensure_templates_table(con)
+        rows = con.execute(
+            "SELECT id, title, description FROM signal_typical_templates ORDER BY id"
+        ).fetchall()
+        result = {}
+        for (tid, title, desc) in rows:
+            sigs = con.execute(
+                "SELECT signal_name, signal_type, signal_description "
+                "FROM signal_typical_template_signals "
+                "WHERE template_id=? ORDER BY sort_order",
+                (tid,)).fetchall()
+            result[tid] = {
+                "id":          tid,
+                "title":       title,
+                "description": desc,
+                "signals": [
+                    {"signal_name": s[0], "signal_type": s[1],
+                     "signal_description": s[2]}
+                    for s in sigs
+                ],
+            }
+    return result
+
+
+def db_save_new_template(title: str, description: str,
+                         signals: list[dict]) -> int:
+    """Insert a new template and return its id."""
+    from datetime import datetime
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with _db_connect() as con:
+        _ensure_templates_table(con)
+        cur = con.execute(
+            "INSERT INTO signal_typical_templates (title, description, created, modified) "
+            "VALUES (?, ?, ?, ?)",
+            (title, description or "", now, now))
+        tid = cur.lastrowid
+        for order, sig in enumerate(signals):
+            con.execute(
+                "INSERT INTO signal_typical_template_signals "
+                "(template_id, signal_name, signal_type, signal_description, sort_order) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (tid, sig["signal_name"], sig["signal_type"],
+                 sig.get("signal_description", ""), order))
+        con.commit()
+    return tid
+
+
+def db_update_template(template_id: int, title: str, description: str,
+                       signals: list[dict]) -> None:
+    """Replace an existing template's data."""
+    from datetime import datetime
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with _db_connect() as con:
+        _ensure_templates_table(con)
+        con.execute(
+            "UPDATE signal_typical_templates "
+            "SET title=?, description=?, modified=? WHERE id=?",
+            (title, description or "", now, template_id))
+        con.execute(
+            "DELETE FROM signal_typical_template_signals WHERE template_id=?",
+            (template_id,))
+        for order, sig in enumerate(signals):
+            con.execute(
+                "INSERT INTO signal_typical_template_signals "
+                "(template_id, signal_name, signal_type, signal_description, sort_order) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (template_id, sig["signal_name"], sig["signal_type"],
+                 sig.get("signal_description", ""), order))
+        con.commit()
+
+
+def db_delete_template(template_id: int) -> None:
+    """Delete a template and all its signals."""
+    with _db_connect() as con:
+        _ensure_templates_table(con)
+        con.execute(
+            "DELETE FROM signal_typical_templates WHERE id=?", (template_id,))
+        con.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -2320,7 +2530,6 @@ def _build_complete_tag(tag_parts: dict, signal_name: str = "") -> str:
 
 def db_save_markers(pdf_path: str, markers: list[dict]) -> None:
     """Replace all markers for this PDF with the current list."""
-    import json
     
     with _db_connect() as con:
         row = con.execute(
@@ -2358,7 +2567,6 @@ def db_save_markers(pdf_path: str, markers: list[dict]) -> None:
         
 def db_load_markers(pdf_path: str) -> list[dict]:
     """Return saved markers for this PDF, or empty list if none."""
-    import json
     
     with _db_connect() as con:
         rows = con.execute(
@@ -2432,7 +2640,12 @@ def db_load_project_markers(project_id: int,
                     m.pdf_x,
                     m.pdf_y,
                     m.signal_type,
-                    m.signal_type_comment
+                    m.signal_type_comment,
+                    m.is_composition,
+                    m.composition_id,
+                    m.tag_parts,
+                    COALESCE(pf.drw_name,''),
+                    COALESCE(pf.drw_number,'')
                 FROM project_files pf
                 JOIN markers m
                   ON REPLACE(m.pdf, '\\', '/') = REPLACE(pf.file_path, '\\', '/')
@@ -2454,7 +2667,12 @@ def db_load_project_markers(project_id: int,
                     m.pdf_x,
                     m.pdf_y,
                     m.signal_type,
-                    m.signal_type_comment
+                    m.signal_type_comment,
+                    m.is_composition,
+                    m.composition_id,
+                    m.tag_parts,
+                    COALESCE(pf.drw_name,''),
+                    COALESCE(pf.drw_number,'')
                 FROM project_files pf
                 JOIN markers m
                   ON REPLACE(m.pdf, '\\', '/') = REPLACE(pf.file_path, '\\', '/')
@@ -2463,8 +2681,15 @@ def db_load_project_markers(project_id: int,
                 ORDER BY pf.sort_order, pf.id, m.page, m.type
             """, (project_id,)).fetchall()
 
-    return [
-        {
+    result = []
+    for r in rows:
+        tag_parts = {}
+        if r[13]:
+            try:
+                tag_parts = json.loads(r[13])
+            except (json.JSONDecodeError, TypeError):
+                tag_parts = {}
+        result.append({
             "file_name":            r[0],
             "file_path":            r[1],
             "page":                 r[2],
@@ -2476,9 +2701,13 @@ def db_load_project_markers(project_id: int,
             "pdf_y":                r[8],
             "parent_signal_type":   r[9]  or "",
             "parent_signal_comment":r[10] or "",
-        }
-        for r in rows
-    ]
+            "is_composition":       bool(r[11]) if r[11] else False,
+            "composition_id":       r[12],
+            "tag_parts":            tag_parts,
+            "drw_name":             r[14] if len(r) > 14 else "",
+            "drw_number":           r[15] if len(r) > 15 else "",
+        })
+    return result
 
 
 def db_get_project_drawing_meta(project_id: int) -> dict:
@@ -2557,48 +2786,52 @@ def db_get_or_create_project_owner(project_id: int) -> int:
         return cur.lastrowid
  
 def db_save_signal_composition(title: str, description: str,
-                              signals: list[dict]) -> int:
+                              signals: list[dict],
+                              control_module: str = "NA",
+                              field_device: str = "NA",
+                              extra_column_headers: list = None,
+                              cm_type: str = "NA",
+                              cm_description: str = "NA",
+                              fd_type: str = "NA",
+                              fd_description: str = "NA",
+                              category: str = "") -> int:
     """
     Save a new signal composition.
-    
-    Args:
-        title: Composition name (e.g., "On-Off Valve")
-        description: Optional description
-        signals: List of dicts: [{signal_name, signal_type, signal_description}, ...]
-        
-    Returns:
-        composition_id
-        
-    Example:
-        db_save_signal_composition(
-            title="On-Off Valve",
-            description="2/2 Solenoid Valve",
-            signals=[
-                {"signal_name": "XS", "signal_type": "HDO", "signal_description": "Valve position"},
-                {"signal_name": "ZSH", "signal_type": "HDI", "signal_description": "Open limit"},
-                {"signal_name": "ZSL", "signal_type": "HDI", "signal_description": "Closed limit"}
-            ]
-        )
     """
     from datetime import datetime
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    extra_headers_json = json.dumps(extra_column_headers or [])
     
     with _db_connect() as con:
         # Insert composition
         cur = con.execute(
-            "INSERT INTO signal_compositions (title, description, created, modified) "
-            "VALUES (?, ?, ?, ?)",
-            (title, description or "", now, now))
+            "INSERT INTO signal_compositions "
+            "(title, description, control_module, field_device, extra_column_headers, "
+            "cm_type, cm_description, fd_type, fd_description, category, created, modified) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (title, description or "", control_module or "NA",
+             field_device or "NA", extra_headers_json,
+             cm_type or "NA", cm_description or "NA",
+             fd_type or "NA", fd_description or "NA",
+             category or "",
+             now, now))
         composition_id = cur.lastrowid
         
         # Insert signals
         for order, sig in enumerate(signals):
+            extra_values_json = json.dumps(sig.get("extra_column_values", []))
             con.execute(
                 "INSERT INTO signal_composition_signals "
-                "(composition_id, signal_name, signal_type, signal_description, sort_order) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "(composition_id, signal_name, signal_type, signal_description, "
+                "prefix, suffix, extra_column_values, count, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
-                 sig.get("signal_description", ""), order))
+                 sig.get("signal_description", ""),
+                 sig.get("prefix") or "NA",
+                 sig.get("suffix") or "NA",
+                 extra_values_json,
+                 int(sig.get("count", 1) or 1),
+                 order))
         
         con.commit()
     
@@ -2614,13 +2847,23 @@ def db_load_signal_composition(composition_id: int) -> dict:
             "id": int,
             "title": str,
             "description": str,
-            "signals": [{"signal_name", "signal_type", "signal_description"}, ...]
+            "control_module": str,   # cm_name
+            "cm_type": str,
+            "cm_description": str,
+            "field_device": str,      # fd_name
+            "fd_type": str,
+            "fd_description": str,
+            "extra_column_headers": [str, ...],
+            "signals": [{"signal_name", "signal_type", "signal_description",
+                         "count", "prefix", "suffix", "extra_column_values": [str, ...]}, ...]
         }
     """
     with _db_connect() as con:
         # Load composition
         comp = con.execute(
-            "SELECT id, title, description FROM signal_compositions WHERE id = ?",
+            "SELECT id, title, description, control_module, field_device, extra_column_headers, "
+            "cm_type, cm_description, fd_type, fd_description, category "
+            "FROM signal_compositions WHERE id = ?",
             (composition_id,)).fetchone()
         
         if not comp:
@@ -2628,7 +2871,7 @@ def db_load_signal_composition(composition_id: int) -> dict:
         
         # Load signals
         signals = con.execute(
-            "SELECT signal_name, signal_type, signal_description "
+            "SELECT signal_name, signal_type, signal_description, prefix, suffix, extra_column_values, count "
             "FROM signal_composition_signals WHERE composition_id = ? "
             "ORDER BY sort_order",
             (composition_id,)).fetchall()
@@ -2637,11 +2880,23 @@ def db_load_signal_composition(composition_id: int) -> dict:
         "id": comp[0],
         "title": comp[1],
         "description": comp[2] or "",
+        "control_module": comp[3] or "NA",
+        "field_device": comp[4] or "NA",
+        "extra_column_headers": json.loads(comp[5] or "[]"),
+        "cm_type": comp[6] or "NA",
+        "cm_description": comp[7] or "NA",
+        "fd_type": comp[8] or "NA",
+        "fd_description": comp[9] or "NA",
+        "category": comp[10] or "",
         "signals": [
             {
                 "signal_name": s[0],
                 "signal_type": s[1],
-                "signal_description": s[2] or ""
+                "signal_description": s[2] or "",
+                "prefix": s[3] or "NA",
+                "suffix": s[4] or "NA",
+                "extra_column_values": json.loads(s[5] or "[]"),
+                "count": int(s[6] or 1),
             }
             for s in signals
         ]
@@ -2651,29 +2906,73 @@ def db_load_signal_composition(composition_id: int) -> dict:
 def db_load_compositions_by_owner(owner_id: int) -> list[dict]:
     """
     Load all signal compositions for a specific owner.
-    
+
+    Uses a single database connection and two bulk queries (compositions + signals)
+    instead of opening a new connection per composition, which avoids the N+1
+    performance problem when a project has many typicals.
+
     Args:
         owner_id: From composition_owners table
-        
+
     Returns:
         List of composition dicts with signals
     """
     with _db_connect() as con:
-        # Get all compositions for this owner
+        # Load all compositions for this owner in one query
         rows = con.execute(
-            "SELECT sc.id FROM signal_compositions sc "
+            "SELECT sc.id, sc.title, sc.description, sc.control_module, sc.field_device, "
+            "sc.extra_column_headers, sc.cm_type, sc.cm_description, sc.fd_type, "
+            "sc.fd_description, sc.category "
+            "FROM signal_compositions sc "
             "JOIN composition_ownership co ON co.composition_id = sc.id "
             "WHERE co.owner_id = ? "
             "ORDER BY co.sort_order, sc.id",
             (owner_id,)).fetchall()
-    
-    compositions = []
-    for row in rows:
-        comp = db_load_signal_composition(row[0])
-        if comp:
-            compositions.append(comp)
-    
-    return compositions
+
+        if not rows:
+            return []
+
+        # Load all signals for these compositions in one bulk query
+        comp_ids = [r[0] for r in rows]
+        placeholders = ",".join("?" for _ in comp_ids)
+        sig_rows = con.execute(
+            f"SELECT composition_id, signal_name, signal_type, signal_description, "
+            f"prefix, suffix, extra_column_values, count "
+            f"FROM signal_composition_signals "
+            f"WHERE composition_id IN ({placeholders}) "
+            f"ORDER BY composition_id, sort_order",
+            comp_ids).fetchall()
+
+    # Group signals by composition id
+    signals_by_comp: dict = {}
+    for s in sig_rows:
+        signals_by_comp.setdefault(s[0], []).append({
+            "signal_name": s[1],
+            "signal_type": s[2],
+            "signal_description": s[3] or "",
+            "prefix": s[4] or "NA",
+            "suffix": s[5] or "NA",
+            "extra_column_values": json.loads(s[6] or "[]"),
+            "count": int(s[7] or 1),
+        })
+
+    return [
+        {
+            "id": r[0],
+            "title": r[1],
+            "description": r[2] or "",
+            "control_module": r[3] or "NA",
+            "field_device": r[4] or "NA",
+            "extra_column_headers": json.loads(r[5] or "[]"),
+            "cm_type": r[6] or "NA",
+            "cm_description": r[7] or "NA",
+            "fd_type": r[8] or "NA",
+            "fd_description": r[9] or "NA",
+            "category": r[10] or "",
+            "signals": signals_by_comp.get(r[0], []),
+        }
+        for r in rows
+    ]
 
 
 def db_load_all_compositions_for_project(project_id: int) -> dict:
@@ -2750,19 +3049,36 @@ def db_delete_signal_composition(composition_id: int) -> None:
 
 
 def db_update_signal_composition(composition_id: int, title: str,
-                                description: str, signals: list[dict]) -> None:
+                                description: str, signals: list[dict],
+                                control_module: str = "NA",
+                                field_device: str = "NA",
+                                extra_column_headers: list = None,
+                                cm_type: str = "NA",
+                                cm_description: str = "NA",
+                                fd_type: str = "NA",
+                                fd_description: str = "NA",
+                                category: str = "") -> None:
     """
     Update an existing signal composition.
     """
     from datetime import datetime
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    extra_headers_json = json.dumps(extra_column_headers or [])
     
     with _db_connect() as con:
         # Update composition header
         con.execute(
-            "UPDATE signal_compositions SET title = ?, description = ?, modified = ? "
+            "UPDATE signal_compositions "
+            "SET title = ?, description = ?, control_module = ?, field_device = ?, "
+            "extra_column_headers = ?, cm_type = ?, cm_description = ?, "
+            "fd_type = ?, fd_description = ?, category = ?, modified = ? "
             "WHERE id = ?",
-            (title, description or "", now, composition_id))
+            (title, description or "", control_module or "NA",
+             field_device or "NA", extra_headers_json,
+             cm_type or "NA", cm_description or "NA",
+             fd_type or "NA", fd_description or "NA",
+             category or "",
+             now, composition_id))
         
         # Delete old signals
         con.execute(
@@ -2771,12 +3087,19 @@ def db_update_signal_composition(composition_id: int, title: str,
         
         # Insert new signals
         for order, sig in enumerate(signals):
+            extra_values_json = json.dumps(sig.get("extra_column_values", []))
             con.execute(
                 "INSERT INTO signal_composition_signals "
-                "(composition_id, signal_name, signal_type, signal_description, sort_order) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "(composition_id, signal_name, signal_type, signal_description, "
+                "prefix, suffix, extra_column_values, count, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (composition_id, sig["signal_name"], sig["signal_type"],
-                 sig.get("signal_description", ""), order))
+                 sig.get("signal_description", ""),
+                 sig.get("prefix") or "NA",
+                 sig.get("suffix") or "NA",
+                 extra_values_json,
+                 int(sig.get("count", 1) or 1),
+                 order))
         
         con.commit()
                 
@@ -2843,13 +3166,14 @@ def _get_signal_composition(obj: dict) -> str:
     Returns:
         String like "2HDI 1HDO" or "1AI 1AO"
     """
-    # Count signals by type
+    # Count signals by type, respecting each signal's count field
     signal_counts = {}
     for sig in obj.get("signals", []):
         # Signals are stored with "signal_type" field in the database
         sig_type = sig.get("signal_type", "")
         if sig_type:
-            signal_counts[sig_type] = signal_counts.get(sig_type, 0) + 1
+            sig_count = int(sig.get("count", 1) or 1)
+            signal_counts[sig_type] = signal_counts.get(sig_type, 0) + sig_count
     
     # Sort by type name for consistent display
     composition_parts = []
@@ -3000,6 +3324,7 @@ def export_signal_types_to_xlsx(path: str, tree: list[dict]) -> None:
     ws2.column_dimensions["A"].width = 80
 
     wb.save(path)
+    wb.close()
 
 
 # ---------------------------------------------------------------------------
@@ -3214,37 +3539,6 @@ class SignalTypeConfigDialog(QDialog):
 
     def __init__(self, current_tree: list[dict], parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Configure Signal Types — Tree Editor")
         self.setMinimumWidth(720)
         self.setMinimumHeight(520)
@@ -3630,37 +3924,6 @@ class ExportMetadataDialog(QDialog):
     """Collects the three fixed header fields before export."""
     def __init__(self, meta: dict, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Export to Excel — Drawing Information")
         self.setFixedWidth(420)
 
@@ -3726,37 +3989,6 @@ class ExportColumnConfigDialog(QDialog):
 
     def __init__(self, current_cols: list[dict], parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Configure Export Columns")
         self.setMinimumWidth(620)
         self.setMinimumHeight(400)
@@ -3945,11 +4177,13 @@ def _get_signal_composition(complex_obj: dict) -> str:
     Returns:
         String like "2HDI 1HDO" or "1AI 1AO"
     """
-    # Count signals by type
+    # Count signals by type, respecting each signal's count field
     signal_counts = {}
     for sig in complex_obj.get("signals", []):
         sig_type = sig.get("signal_type", "")  # e.g., "HDI", "HDO", "AI", "AO"
-        signal_counts[sig_type] = signal_counts.get(sig_type, 0) + 1
+        if sig_type:
+            sig_count = int(sig.get("count", 1) or 1)
+            signal_counts[sig_type] = signal_counts.get(sig_type, 0) + sig_count
     
     # Sort by type name for consistent display
     composition_parts = []
@@ -3960,64 +4194,145 @@ def _get_signal_composition(complex_obj: dict) -> str:
     return " ".join(composition_parts)  # e.g., "2HDI 1HDO"
 
 # ─────────────────────────────────────────────────────────────────────
-# Helper: Expand complex markers to individual signal rows
+# Helper: read the PDF embedded title from file metadata
+# ─────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
+# Helper: Expand markers to the new 6-column export format
 # ─────────────────────────────────────────────────────────────────────
 def _expand_markers_for_excel(markers: list[dict]) -> list[dict]:
     """
-    Expand composition markers into multiple rows (one per signal).
-    Uses tag_parts to build: prefix-SIGNAL_NAME-middle_fields-suffix
+    Expand each marker into one or more row dicts with keys:
+        name, type, desc1, desc2, tag_name, comments, page, file_name
+
+    For composition markers the output is:
+        1. One row for the Control Module (if present, i.e. not "NA")
+        2. One row for the Field Device   (if present, i.e. not "NA")
+        3. One row per signal × marker count
+           (e.g. composition "2HDI 1HDO" placed with count=2 → 4 HDI + 2 HDO rows)
+
+    Description 2 (desc2) is the composition title (first field in the Signal
+    Configuration menu) and is repeated on every row of the same composition.
+    Comments is the composition description and is also repeated.
+    Tag Name for signals is  (prefix or "NA")-(signal_type)-(suffix or "NA").
+    Tag Name for CM/FD rows is always "NA".
+
+    For plain (non-composition) markers a single row is produced using the
+    marker's own type / comment / description.
     """
     expanded = []
-    
+
     for m in markers:
         if m.get("is_composition") and m.get("composition_id"):
-            # ── Expand composition marker to multiple rows ──────────
             composition = db_load_signal_composition(m["composition_id"])
             if not composition:
                 continue
-            
-            tag_parts = m.get("tag_parts", {})
-            
-            prefix = tag_parts.get("prefix", "")
-            middle_fields = tag_parts.get("middle_fields", [])
-            suffix = tag_parts.get("suffix", "")
-            
-            for signal in composition["signals"]:
-                # Build tag: prefix-SIGNAL-middle_fields-suffix
-                parts = []
-                
-                if prefix:
-                    parts.append(prefix)
-                
-                parts.append(signal["signal_name"])
-                
-                if middle_fields:
-                    parts.extend(middle_fields)
-                
-                if suffix:
-                    parts.append(suffix)
-                
-                signal_tag = "-".join(parts)
-                
+
+            tag_parts = m.get("tag_parts") or {}
+            prefix    = tag_parts.get("prefix", "") or ""
+            suffix    = tag_parts.get("suffix", "") or ""
+            # count stored in tag_parts["count"] by CompositionPlacementDialog
+            count     = int(tag_parts.get("count", m.get("count", 1)) or 1)
+
+            # Description 2 = composition title (first field in Signal Config menu)
+            desc2    = composition.get("title", "")
+            # Description/comments: prefer per-instance override from tag_parts
+            comments = (tag_parts.get("description") or
+                        composition.get("description", ""))
+            file_nm  = m.get("file_name", "")
+            drw_nm   = m.get("drw_name", "")
+            drw_num  = m.get("drw_number", "")
+            file_pt  = m.get("file_path", "")
+            page     = m.get("page", 0)
+
+            # Per-signal overrides saved by MarkerEditDialog / CompositionPlacementDialog
+            signal_overrides = tag_parts.get("signal_overrides", [])
+
+            # ── Control Module row (not multiplied by count) ─────────
+            cm_name = composition.get("control_module", "NA") or "NA"
+            if cm_name and cm_name.strip().upper() != "NA":
                 expanded.append({
-                    "tag": signal_tag,
-                    "signal": signal["signal_name"],
-                    "type": signal["signal_type"],
-                    "description": signal.get("signal_description", ""),
-                    "page": m["page"],
-                    "_expanded_from_composition": True,
+                    "name":       cm_name,
+                    "type":       tag_parts.get("cm_type") or composition.get("cm_type", "") or "",
+                    "desc1":      tag_parts.get("cm_description") or composition.get("cm_description", "") or "",
+                    "desc2":      desc2,
+                    "tag_name":   "NA",
+                    "comments":   comments,
+                    "page":       page,
+                    "file_name":  file_nm,
+                    "file_path":  file_pt,
+                    "drw_name":   drw_nm,
+                    "drw_number": drw_num,
                 })
+
+            # ── Field Device row (not multiplied by count) ────────────
+            fd_name = composition.get("field_device", "NA") or "NA"
+            if fd_name and fd_name.strip().upper() != "NA":
+                expanded.append({
+                    "name":       fd_name,
+                    "type":       tag_parts.get("fd_type") or composition.get("fd_type", "") or "",
+                    "desc1":      tag_parts.get("fd_description") or composition.get("fd_description", "") or "",
+                    "desc2":      desc2,
+                    "tag_name":   "NA",
+                    "comments":   comments,
+                    "page":       page,
+                    "file_name":  file_nm,
+                    "file_path":  file_pt,
+                    "drw_name":   drw_nm,
+                    "drw_number": drw_num,
+                })
+
+            # ── Signal rows × count ──────────────────────────────────
+            extra_headers = composition.get("extra_column_headers", [])
+            for sig_idx, signal in enumerate(composition.get("signals", [])):
+                ov = signal_overrides[sig_idx] if sig_idx < len(signal_overrides) else {}
+                sig_type = signal.get("signal_type", "")
+                # Per-signal prefix/suffix override, then global, then "NA"
+                sig_prefix = ov.get("prefix", prefix) or prefix
+                sig_suffix = ov.get("suffix", suffix) or suffix
+                tag_name   = f"{sig_prefix or 'NA'}-{sig_type}-{sig_suffix or 'NA'}"
+
+                # Extra column values: prefer per-signal override
+                ov_extras = ov.get("extra_column_values",
+                                   signal.get("extra_column_values", []))
+                extra_dict = {
+                    f"extra_{h}": (ov_extras[i] if i < len(ov_extras) else "")
+                    for i, h in enumerate(extra_headers)
+                }
+
+                row = {
+                    "name":       signal.get("signal_name", ""),
+                    "type":       sig_type,
+                    "desc1":      ov.get("signal_description",
+                                        signal.get("signal_description", "")),
+                    "desc2":      desc2,
+                    "tag_name":   tag_name,
+                    "comments":   comments,
+                    "page":       page,
+                    "file_name":  file_nm,
+                    "file_path":  file_pt,
+                    "drw_name":   drw_nm,
+                    "drw_number": drw_num,
+                    **extra_dict,
+                }
+                for _ in range(count):
+                    expanded.append(row.copy())
         else:
-            # ── Keep other markers as-is ──────────────────────────
+            # ── Plain (non-composition) marker ───────────────────────
+            sig_type = (m.get("signal_type") or m.get("type") or "")
             expanded.append({
-                "tag": m.get("base_tag", ""),
-                "signal": m.get("type", ""),
-                "type": m.get("signal_type", ""),
-                "description": m.get("comment", ""),
-                "page": m["page"],
-                "_expanded_from_composition": False,
+                "name":       m.get("type", ""),
+                "type":       sig_type,
+                "desc1":      m.get("description", "") or m.get("comment", ""),
+                "desc2":      "",
+                "tag_name":   m.get("complete_tag") or m.get("base_tag", ""),
+                "comments":   m.get("comment", "") or m.get("signal_comment", ""),
+                "page":       m.get("page", 0),
+                "file_name":  m.get("file_name", ""),
+                "file_path":  m.get("file_path", ""),
+                "drw_name":   m.get("drw_name", ""),
+                "drw_number": m.get("drw_number", ""),
             })
-    
+
     return expanded
 # ---------------------------------------------------------------------------
 # Excel export — writer
@@ -4026,20 +4341,27 @@ def export_to_excel(path: str, pdf_path: str,
                     markers: list[dict], meta: dict,
                     col_config: list[dict]) -> None:
     """
-    Build an Excel workbook from markers.
-    Complex markers are expanded to multiple rows (one per signal).
-    
-    Columns:
-    - Tag (e.g., XV-101-XS, XV-101-ZSH)
-    - Signal (e.g., XS, ZSH)
-    - Type (e.g., HDO, HDI)
-    - Description (from complex object or marker comment)
+    Build an Excel workbook from markers using the new 6-column format.
+
+    Columns per row:
+        Name | Type | Description 1 | Description 2 | Tag Name | Comments
+
+    Composition markers are expanded:
+        • One row for the Control Module (if present)
+        • One row for the Field Device    (if present)
+        • One row per signal in the composition
+          (repeated signals, e.g. 2×HDI, produce two rows each)
     """
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
 
-    # ── Expand complex markers ─────────────────────────────────────
+    FIXED_HEADERS = ["Name", "Type", "Description 1",
+                     "Description 2 (Signal Typical Details)",
+                     "Tag Name", "Comments"]
+    COL_WIDTHS    = [24, 14, 36, 36, 22, 36]
+
+    # Expand markers into rows
     expanded_markers = _expand_markers_for_excel(markers)
 
     # Group by page
@@ -4047,18 +4369,14 @@ def export_to_excel(path: str, pdf_path: str,
     for m in expanded_markers:
         pages.setdefault(m["page"], []).append(m)
 
-    # ── Fixed header columns ───────────────────────────────────────
-    FIXED_HEADERS = ["Tag", "Signal", "Type", "Description"]
-
-    # Header styles
-    hdr_font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
-    hdr_fill = PatternFill("solid", start_color="1F4E79")
+    # Styles
+    hdr_font  = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    hdr_fill  = PatternFill("solid", start_color="1F4E79")
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    
-    row_font = Font(name="Arial", size=10)
-    alt_fill = PatternFill("solid", start_color="EEF2FA")
+    row_font  = Font(name="Arial", size=10)
+    alt_fill  = PatternFill("solid", start_color="EEF2FA")
     center_al = Alignment(horizontal="center", vertical="center")
-    left_al = Alignment(horizontal="left", vertical="center")
+    left_al   = Alignment(horizontal="left",   vertical="center", wrap_text=True)
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -4069,53 +4387,45 @@ def export_to_excel(path: str, pdf_path: str,
         sheet_name = f"Page {page_idx + 1}"
         ws = wb.create_sheet(title=sheet_name)
 
-        # ── Header row ─────────────────────────────────────────────
-        for ci, hdr in enumerate(FIXED_HEADERS, start=1):
+        # Header row
+        for ci, (hdr, w) in enumerate(zip(FIXED_HEADERS, COL_WIDTHS), start=1):
             cell = ws.cell(row=1, column=ci, value=hdr)
-            cell.font = hdr_font
-            cell.fill = hdr_fill
+            cell.font      = hdr_font
+            cell.fill      = hdr_fill
             cell.alignment = hdr_align
-        ws.row_dimensions[1].height = 24
+            ws.column_dimensions[get_column_letter(ci)].width = w
+        ws.row_dimensions[1].height = 28
 
-        # ── Data rows ──────────────────────────────────────────────
-        page_markers = sorted(pages.get(page_idx, []),
-                               key=lambda m: m.get("signal", "").upper())
-
-        for ri, m in enumerate(page_markers, start=2):
-            fill = PatternFill("solid", start_color="EEF2FA") \
-                   if ri % 2 == 0 else PatternFill()
-
-            # Get values
-            tag = m.get("tag", "")
-            signal_name = m.get("signal", "")
-            signal_type = m.get("type", "")
-            description = m.get("description", "")
-
-            values = [tag, signal_name, signal_type, description]
-            
+        # Data rows
+        page_rows = pages.get(page_idx, [])
+        for ri, m in enumerate(page_rows, start=2):
+            fill = alt_fill if ri % 2 == 0 else PatternFill()
+            values = [
+                m.get("name", ""),
+                m.get("type", ""),
+                m.get("desc1", ""),
+                m.get("desc2", ""),
+                m.get("tag_name", ""),
+                m.get("comments", ""),
+            ]
             for ci, val in enumerate(values, start=1):
                 cell = ws.cell(row=ri, column=ci, value=val)
-                cell.font = row_font
-                cell.fill = fill
-                cell.alignment = left_al if ci == 4 else center_al
+                cell.font      = row_font
+                cell.fill      = fill
+                cell.alignment = center_al if ci == 2 else left_al
 
-        # ── Column widths ──────────────────────────────────────────
-        ws.column_dimensions["A"].width = 20  # Tag
-        ws.column_dimensions["B"].width = 12  # Signal
-        ws.column_dimensions["C"].width = 12  # Type
-        ws.column_dimensions["D"].width = 40  # Description
-
-        # ── Summary row ────────────────────────────────────────────
-        if page_markers:
-            summary_row = len(page_markers) + 2
+        # Summary row
+        if page_rows:
+            summary_row = len(page_rows) + 2
             ws.cell(row=summary_row, column=1,
-                    value=f"Total markers on this page: {len(page_markers)}"
+                    value=f"Total rows on this page: {len(page_rows)}"
                     ).font = Font(name="Arial", bold=True, italic=True,
                                   size=10, color="1F4E79")
 
         ws.freeze_panes = "A2"
 
     wb.save(path)
+    wb.close()
 
 
 # ---------------------------------------------------------------------------
@@ -4124,160 +4434,201 @@ def export_to_excel(path: str, pdf_path: str,
 def export_project_io_list(path: str, project_id: int,
                            file_path: str | None = None) -> None:
     """
-    Export IO signal markers to Excel.
-    If file_path is given, exports only that drawing.
-    Otherwise exports the entire project (all drawings).
-    File paths are intentionally excluded from the output.
+    Export IO signal markers to a single Excel sheet.
+
+    Columns: Name | Type | Description 1 | Description 2 (Signal Typical Details)
+             | Tag Name | Comments | Technical Drawing Number | Page Number
+             | Project Name | Project Number | Project Description
+             | [extra signal columns from Signal Typical config...]
+
+    All markers from all drawings are written sequentially into one "IO List"
+    sheet.  No per-drawing sub-sheets are created.
     """
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.utils import get_column_letter
 
-    markers  = db_load_project_markers(project_id, file_path)
-    meta     = db_get_project_drawing_meta(project_id)
+    markers = db_load_project_markers(project_id, file_path)
+    meta    = db_get_project_drawing_meta(project_id)
+
+    # Collect all extra column headers across all referenced compositions
+    extra_headers_seen: list[str] = []
+    comp_cache: dict[int, dict] = {}
+    for m in markers:
+        cid = m.get("composition_id")
+        if cid and cid not in comp_cache:
+            comp = db_load_signal_composition(cid)
+            if comp:
+                comp_cache[cid] = comp
+                for h in comp.get("extra_column_headers", []):
+                    if h not in extra_headers_seen:
+                        extra_headers_seen.append(h)
+
+    FIXED_COLS = [
+        "Name", "Type", "Description 1",
+        "Description 2 (Signal Typical Details)",
+        "Tag Name", "Comments",
+        "Technical Drawing Number", "Technical Drawing Description", "Page Number",
+        "Project Name", "Project Number", "Project Description",
+    ]
+    FIXED_WIDTHS = [24, 14, 36, 36, 22, 36, 34, 28, 12, 28, 16, 36]
+    EXTRA_WIDTH  = 22
+
+    COLS       = FIXED_COLS + extra_headers_seen
+    COL_WIDTHS = FIXED_WIDTHS + [EXTRA_WIDTH] * len(extra_headers_seen)
 
     # Styles
-    hdr_font     = Font(name="Arial", bold=True, color="FFFFFF", size=10)
-    hdr_fill     = PatternFill("solid", start_color="1F4E79")
-    hdr_align    = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    sub_font     = Font(name="Arial", bold=True, color="1F4E79", size=10)
-    sub_fill     = PatternFill("solid", start_color="D9E1F2")
-    sub_align    = Alignment(horizontal="left", vertical="center")
-    row_font     = Font(name="Arial", size=10)
-    alt_fill     = PatternFill("solid", start_color="EEF2FA")
-    center_al    = Alignment(horizontal="center", vertical="center")
-    left_al      = Alignment(horizontal="left",   vertical="center")
+    hdr_font  = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    hdr_fill  = PatternFill("solid", start_color="1F4E79")
+    hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    row_font  = Font(name="Arial", size=10)
+    alt_fill  = PatternFill("solid", start_color="EEF2FA")
+    center_al = Alignment(horizontal="center", vertical="center")
+    left_al   = Alignment(horizontal="left",   vertical="center", wrap_text=True)
 
-    COLS = ["No.", "Drawing", "Page", "Signal Type", "Sub-signal",
-            "Count", "Signal Description", "Sub-signal Description", "Notes"]
-    COL_WIDTHS = [6, 28, 7, 14, 14, 8, 26, 26, 36]
-
-    def _write_header(ws):
+    def _write_header(ws, start_row: int = 1):
         for ci, (hdr, w) in enumerate(zip(COLS, COL_WIDTHS), 1):
-            cell = ws.cell(row=1, column=ci, value=hdr)
+            cell = ws.cell(row=start_row, column=ci, value=hdr)
             cell.font      = hdr_font
             cell.fill      = hdr_fill
             cell.alignment = hdr_align
             ws.column_dimensions[get_column_letter(ci)].width = w
-        ws.row_dimensions[1].height = 24
-        ws.freeze_panes = "A2"
+        ws.row_dimensions[start_row].height = 28
 
-    def _write_marker_row(ws, row_idx: int, seq: int,
-                      drawing: str, m: dict, use_alt: bool):
+    def _write_row(ws, row_idx: int, r: dict, use_alt: bool):
         fill = alt_fill if use_alt else PatternFill()
-        
-        parent_type    = m.get("parent_signal_type",    "")
-        parent_comment = m.get("parent_signal_comment", "")
-        leaf_type      = m["signal_type"]
-        leaf_comment   = m["signal_comment"]
-
-        if parent_type:
-            # Full path: DI → HDI
-            sig_type_col     = parent_type
-            sig_type_desc    = parent_comment
-            sub_signal_col   = leaf_type
-            sub_signal_desc  = leaf_comment
-            display_label    = f"{leaf_type}"
-        else:
-            # Flat: no parent
-            sig_type_col     = leaf_type
-            sig_type_desc    = leaf_comment
-            sub_signal_col   = ""
-            sub_signal_desc  = ""
-            display_label    = f"{sig_type_col}"
-
-        values = [seq, drawing, m["page"] + 1,
-                sig_type_col, sub_signal_col,
-                1, sig_type_desc, sub_signal_desc,
-                m["description"]]
-        aligns = [center_al, left_al, center_al,
-                left_al, left_al,
-                center_al, left_al, left_al,
-                left_al]
-        for ci, (val, aln) in enumerate(zip(values, aligns), 1):
+        # If the user set file metadata (drw_name), use it; otherwise fall back
+        # to the PDF file name stem.
+        drawing_name   = r.get("drw_name", "") or os.path.splitext(r.get("file_name", ""))[0]
+        drawing_number = r.get("drw_number", "")
+        page_number    = r.get("page", 0) + 1
+        fixed_values = [
+            r.get("name", ""),
+            r.get("type", ""),
+            r.get("desc1", ""),
+            r.get("desc2", ""),
+            r.get("tag_name", ""),
+            r.get("comments", ""),
+            drawing_name,
+            drawing_number,
+            page_number,
+            meta.get("name", ""),
+            meta.get("number", ""),
+            meta.get("description", ""),
+        ]
+        extra_values = [r.get(f"extra_{h}", "") for h in extra_headers_seen]
+        values = fixed_values + extra_values
+        for ci, val in enumerate(values, start=1):
             cell = ws.cell(row=row_idx, column=ci, value=val)
             cell.font      = row_font
             cell.fill      = fill
-            cell.alignment = aln
+            cell.alignment = center_al if ci in (2, 8) else left_al
 
     wb = Workbook()
     wb.remove(wb.active)
 
-    # ── Summary sheet ─────────────────────────────────────────────────────
+    # ── Single "IO List" sheet ─────────────────────────────────────────────
     ws_all = wb.create_sheet("IO List")
-    _write_header(ws_all)
 
-    # Add project metadata banner above the header
-    ws_all.insert_rows(1)
+    # Row 1: project banner
     banner_val = (f"Project: {meta['name']}"
                   + (f"  ({meta['number']})" if meta["number"] else ""))
     cell = ws_all.cell(row=1, column=1, value=banner_val)
-    cell.font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
-    cell.fill = PatternFill("solid", start_color="0D2B4E")
+    cell.font      = Font(name="Arial", bold=True, color="FFFFFF", size=11)
+    cell.fill      = PatternFill("solid", start_color="0D2B4E")
     cell.alignment = left_al
     ws_all.merge_cells(start_row=1, start_column=1,
                        end_row=1, end_column=len(COLS))
     ws_all.row_dimensions[1].height = 20
 
-    # Group markers by drawing
-    from itertools import groupby
-    seq        = 0
-    data_row   = 3   # row 1 = banner, row 2 = header
+    # Row 2: column headers
+    _write_header(ws_all, start_row=2)
+    ws_all.freeze_panes = "A3"
+
+    # Data rows starting from row 3
+    data_row   = 3
     alt_toggle = False
+    total_rows = 0
 
-    for file_name, group in groupby(markers, key=lambda m: m["file_name"]):
-        group_list = list(group)
-        # Sub-header for this drawing
-        cell = ws_all.cell(row=data_row, column=1,
-                           value=f"📄  {file_name}")
-        cell.font      = sub_font
-        cell.fill      = sub_fill
-        cell.alignment = sub_align
-        ws_all.merge_cells(start_row=data_row, start_column=1,
-                           end_row=data_row, end_column=len(COLS))
-        ws_all.row_dimensions[data_row].height = 18
-        data_row += 1
+    expanded_all = _expand_markers_for_excel(markers)
+    for r in expanded_all:
+        alt_toggle = not alt_toggle
+        _write_row(ws_all, data_row, r, alt_toggle)
+        data_row   += 1
+        total_rows += 1
 
-        for m in group_list:
-            seq        += 1
-            alt_toggle  = not alt_toggle
-            _write_marker_row(ws_all, data_row, seq,
-                              file_name, m, alt_toggle)
-            data_row += 1
-
-    # Summary count at the bottom
-    if seq:
+    if total_rows:
         ws_all.cell(row=data_row + 1, column=1,
-                    value=f"Total IO markers: {seq}"
+                    value=f"Total rows: {total_rows}"
                     ).font = Font(name="Arial", bold=True,
                                   italic=True, size=10, color="1F4E79")
 
-    # ── Per-drawing sheets ────────────────────────────────────────────────
-    seen_names: dict[str, int] = {}
-    for file_name, group in groupby(
-            db_load_project_markers(project_id, file_path),
-            key=lambda m: m["file_name"]):
-        group_list = list(group)
-        # Deduplicate sheet names (same filename in multiple projects)
-        base = os.path.splitext(file_name)[0][:28]
-        seen_names[base] = seen_names.get(base, 0) + 1
-        sheet_name = base if seen_names[base] == 1 else f"{base}({seen_names[base]})"
+    # ── "Final Count" sheet — signal typical counts only ──────────────────
+    ws_count = wb.create_sheet("Final Count")
 
-        ws = wb.create_sheet(sheet_name)
-        _write_header(ws)
-        alt_toggle = False
-        for ri, m in enumerate(group_list, start=1):
-            alt_toggle = not alt_toggle
-            _write_marker_row(ws, ri + 1, ri, file_name, m, alt_toggle)
+    # Count each signal type from signal rows only (not CM/FD rows).
+    # Signal rows are identified by their type being one of the 8 IO types.
+    signal_type_counts: dict[str, int] = {t: 0 for t in _SIGNAL_IO_TYPES}
+    for r in expanded_all:
+        sig_t = r.get("type", "")
+        if sig_t in signal_type_counts:
+            signal_type_counts[sig_t] += 1
 
-        if group_list:
-            summary_row = len(group_list) + 3
-            ws.cell(row=summary_row, column=1,
-                    value=f"Total: {len(group_list)} marker(s)"
-                    ).font = Font(name="Arial", bold=True,
-                                  italic=True, size=10, color="1F4E79")
+    # Header row
+    fc_hdr_font  = Font(name="Arial", bold=True, color="FFFFFF", size=11)
+    fc_hdr_fill  = PatternFill("solid", start_color="1F4E79")
+    fc_hdr_align = Alignment(horizontal="center", vertical="center")
+    fc_row_font  = Font(name="Arial", size=11)
+    fc_alt_fill  = PatternFill("solid", start_color="EEF2FA")
+    fc_num_align = Alignment(horizontal="center", vertical="center")
+    fc_lbl_align = Alignment(horizontal="left",   vertical="center")
+
+    for ci, hdr in enumerate(("Signal Type", "Count"), start=1):
+        c = ws_count.cell(row=1, column=ci, value=hdr)
+        c.font      = fc_hdr_font
+        c.fill      = fc_hdr_fill
+        c.alignment = fc_hdr_align
+    ws_count.column_dimensions["A"].width = 20
+    ws_count.column_dimensions["B"].width = 14
+    ws_count.row_dimensions[1].height = 24
+
+    # Data rows
+    grand_total = 0
+    for ri, sig_type in enumerate(_SIGNAL_IO_TYPES, start=2):
+        count_val = signal_type_counts[sig_type]
+        grand_total += count_val
+        use_alt = (ri % 2 == 0)
+        row_fill = fc_alt_fill if use_alt else PatternFill()
+
+        lbl_cell = ws_count.cell(row=ri, column=1, value=sig_type)
+        lbl_cell.font      = fc_row_font
+        lbl_cell.fill      = row_fill
+        lbl_cell.alignment = fc_lbl_align
+
+        cnt_cell = ws_count.cell(row=ri, column=2, value=count_val)
+        cnt_cell.font      = fc_row_font
+        cnt_cell.fill      = row_fill
+        cnt_cell.alignment = fc_num_align
+
+    # Grand total row
+    total_row = len(_SIGNAL_IO_TYPES) + 2
+    tot_font  = Font(name="Arial", bold=True, size=11, color="1F4E79")
+    tot_fill  = PatternFill("solid", start_color="D9E1F2")
+
+    lbl_tot = ws_count.cell(row=total_row, column=1, value="TOTAL")
+    lbl_tot.font      = tot_font
+    lbl_tot.fill      = tot_fill
+    lbl_tot.alignment = fc_lbl_align
+
+    cnt_tot = ws_count.cell(row=total_row, column=2, value=grand_total)
+    cnt_tot.font      = tot_font
+    cnt_tot.fill      = tot_fill
+    cnt_tot.alignment = fc_num_align
+
+    ws_count.freeze_panes = "A2"
 
     wb.save(path)
+    wb.close()
 
 
 # ---------------------------------------------------------------------------
@@ -4291,37 +4642,6 @@ class SessionMatchDialog(QDialog):
     """
     def __init__(self, current_path: str, matches: list[dict], parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Previous Session Detected")
         self.setMinimumWidth(580)
         self._chosen: dict | None = None
@@ -4428,37 +4748,6 @@ class ManualLinkDialog(QDialog):
     """
     def __init__(self, current_path: str, sessions: list[dict], parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("Link to Previous Session")
         self.setMinimumWidth(620)
         self.setMinimumHeight(360)
@@ -4587,6 +4876,12 @@ def _ensure_project_tables(con: sqlite3.Connection) -> None:
             sort_order  INTEGER NOT NULL DEFAULT 0
         )
     """)
+    # Add per-file drawing metadata columns (migration-safe)
+    for _col in ("drw_name", "drw_number"):
+        try:
+            con.execute(f"ALTER TABLE project_files ADD COLUMN {_col} TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
     con.commit()
 
 def db_create_project(name: str, number: str, description: str) -> int:
@@ -4655,10 +4950,35 @@ def db_load_project_files(project_id: int) -> list[dict]:
     with _db_connect() as con:
         _ensure_project_tables(con)
         rows = con.execute(
-            "SELECT id, file_path, file_name FROM project_files "
+            "SELECT id, file_path, file_name, "
+            "COALESCE(drw_name,''), COALESCE(drw_number,'') "
+            "FROM project_files "
             "WHERE project_id=? ORDER BY sort_order, id",
             (project_id,)).fetchall()
-    return [{"id": r[0], "file_path": r[1], "file_name": r[2]} for r in rows]
+    return [{"id": r[0], "file_path": r[1], "file_name": r[2],
+             "drw_name": r[3], "drw_number": r[4]} for r in rows]
+
+
+def db_get_file_metadata(file_id: int) -> dict:
+    """Return per-file drawing metadata (drw_name, drw_number)."""
+    with _db_connect() as con:
+        _ensure_project_tables(con)
+        row = con.execute(
+            "SELECT COALESCE(drw_name,''), COALESCE(drw_number,'') "
+            "FROM project_files WHERE id=?", (file_id,)).fetchone()
+    if row:
+        return {"drw_name": row[0], "drw_number": row[1]}
+    return {"drw_name": "", "drw_number": ""}
+
+
+def db_save_file_metadata(file_id: int, drw_name: str, drw_number: str) -> None:
+    """Persist per-file drawing metadata."""
+    with _db_connect() as con:
+        _ensure_project_tables(con)
+        con.execute(
+            "UPDATE project_files SET drw_name=?, drw_number=? WHERE id=?",
+            (drw_name, drw_number, file_id))
+        con.commit()
 
 def db_find_pdf_in_projects(file_path: str) -> list[dict]:
     """
@@ -4698,261 +5018,210 @@ def _get_projects_for_pdf(pdf_path: str) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────────
 class CompositionPlacementDialog(QDialog):
     """
-    Dialog for placing a signal composition on the PDF.
-    Allows users to:
-    - Configure optional tag parts (prefix, middle fields, suffix)
-    - Set a multiplier count (e.g., 2x means all signals are multiplied by 2)
-    
-    Example: "On-Off Valve" (1HDO 2HDI) with count=3 becomes "3HDO 6HDI"
+    Dialog shown when placing a Signal Typical on the PDF.
+    Displays the full typical configuration.
+
+    Read-only: title, Control Module Name, Field Device Name,
+               Signal Name, Signal Type, Signal Description,
+               Count, and Resulting Signal columns.
+    Editable:  description, CM type/desc, FD type/desc,
+               Prefix, Suffix, and any extra columns.
     """
-    
+
+    @staticmethod
+    def _ro_colors() -> tuple:
+        """Return (bg QColor, fg QColor) for read-only cells, respecting the current theme."""
+        palette = QApplication.instance().palette()
+        is_dark = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        if is_dark:
+            return QColor("#2A2A2A"), QColor("#888888")
+        return QColor("#E0E0E0"), QColor("#555555")
+
+    # Fixed columns that mirror the Signal Typical configuration dialog.
+    # Columns: Signal Name | Signal Type | Signal Description | Count |
+    #          Prefix | Suffix | Resulting Signal | [extra columns…]
+    _FIXED_COL_COUNT = 7
+
     def __init__(self, composition: dict, parent=None, tag_parts: dict = None):
         super().__init__(parent)
         self.setWindowTitle(f"Place {composition['title']}")
-        self.setMinimumWidth(520)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QSpinBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QListWidget { background: #252525; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; }"
-            "QListWidget::item { padding: 3px; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
+        self.setMinimumSize(750, 560)
         self._composition = composition
-        self._middle_fields = []
-        self._initial_tag_parts = tag_parts or {}
-        
-        # Header with composition
-        composition_text = _get_signal_composition(composition)
-        title = QLabel(f"<b>{composition['title']}</b>  <span style='color:#7EC8F0;'>{composition_text}</span>")
-        title.setStyleSheet("font-size: 11pt; color:#7EC8F0;")
-        
-        if composition['description']:
-            comment_lbl = QLabel(composition['description'])
-            comment_lbl.setStyleSheet("color:#AAAAAA; font-size: 9pt;")
-        else:
-            comment_lbl = None
-        
-        # ── Count Field (NEW) ────────────────────────────────────────────
-        count_layout = QHBoxLayout()
-        count_layout.addWidget(QLabel("<b>Count (multiplier):</b>"))
-        self.count_spin = QSpinBox()
-        self.count_spin.setMinimum(1)
-        self.count_spin.setMaximum(999)
-        self.count_spin.setValue(tag_parts.get("count", 1) if tag_parts else 1)
-        self.count_spin.setMaximumWidth(80)
-        self.count_spin.valueChanged.connect(self._update_preview)
-        count_layout.addWidget(self.count_spin)
-        count_layout.addWidget(QLabel("(all signals will be multiplied by this count)"))
-        count_layout.addStretch()
-        
-        # ── Tag Configuration Section (All Optional) ───────────────────────
-        tag_config_lbl = QLabel("<b>Tag Configuration (all optional):</b>")
-        tag_hint = QLabel("Signal names will be automatically included.")
-        tag_hint.setStyleSheet("color:#999999; font-size: 8pt;")
-        
-        # Prefix field
-        prefix_layout = QHBoxLayout()
-        prefix_layout.addWidget(QLabel("Prefix:"))
-        self.prefix_edit = QLineEdit()
-        self.prefix_edit.setPlaceholderText("e.g., 7600 (optional)")
-        self.prefix_edit.setMaximumWidth(150)
-        prefix_layout.addWidget(self.prefix_edit)
-        prefix_layout.addStretch()
-        
-        # Suffix field
-        suffix_layout = QHBoxLayout()
-        suffix_layout.addWidget(QLabel("Suffix:"))
-        self.suffix_edit = QLineEdit()
-        self.suffix_edit.setPlaceholderText("e.g., B (optional)")
-        self.suffix_edit.setMaximumWidth(150)
-        suffix_layout.addWidget(self.suffix_edit)
-        suffix_layout.addStretch()
-        
-        # Middle fields container
-        self.middle_fields_layout = QVBoxLayout()
-        self.middle_fields_layout.setSpacing(4)
-        
-        # Add/Remove middle field buttons
-        middle_btn_layout = QHBoxLayout()
-        add_middle_btn = QPushButton("➕ Add Field")
-        add_middle_btn.setToolTip("Add another field (e.g., 014)")
-        add_middle_btn.clicked.connect(self._add_middle_field)
-        clear_middle_btn = QPushButton("🗑 Clear Fields")
-        clear_middle_btn.setToolTip("Remove all middle fields")
-        clear_middle_btn.clicked.connect(self._clear_middle_fields)
-        middle_btn_layout.addWidget(add_middle_btn)
-        middle_btn_layout.addWidget(clear_middle_btn)
-        middle_btn_layout.addStretch()
-        
-        # Signals preview
-        preview_lbl = QLabel("<b>Complete tags for each signal (after multiplying by count):</b>")
-        self.signals_list = QListWidget()
-        self.signals_list.setMaximumHeight(200)
-        self.signals_list.setEditTriggers(
-            QAbstractItemView.EditTrigger.NoEditTriggers)
-        
-        # Connect fields to update preview
-        self.prefix_edit.textChanged.connect(self._update_preview)
-        self.suffix_edit.textChanged.connect(self._update_preview)
-        
-        # Main layout
+        tp = tag_parts or {}
+
         lay = QVBoxLayout()
         lay.setContentsMargins(16, 14, 16, 10)
         lay.setSpacing(10)
-        
-        lay.addWidget(title)
-        if comment_lbl:
-            lay.addWidget(comment_lbl)
-        
-        lay.addLayout(count_layout)
-        lay.addWidget(tag_config_lbl)
-        lay.addWidget(tag_hint)
-        lay.addLayout(prefix_layout)
-        lay.addLayout(suffix_layout)
-        lay.addWidget(QLabel("Middle Fields (optional):"))
-        lay.addLayout(self.middle_fields_layout)
-        lay.addLayout(middle_btn_layout)
-        
-        lay.addWidget(preview_lbl)
-        lay.addWidget(self.signals_list, stretch=1)
-        
-        # Buttons
+
+        # ── Title ─────────────────────────────────────────────────────────
+        composition_text = _get_signal_composition(composition)
+        title_lbl = QLabel(
+            f"<b>{composition['title']}</b>"
+            + (f"  <span style='color:#7EC8F0;'>{composition_text}</span>"
+               if composition_text else ""))
+        title_lbl.setStyleSheet("font-size: 11pt;")
+        lay.addWidget(title_lbl)
+
+        # ── Description ───────────────────────────────────────────────────
+        desc_row = QHBoxLayout()
+        desc_row.addWidget(QLabel("<b>Description:</b>"))
+        self.desc_edit = QLineEdit(tp.get("description", composition.get("description", "")))
+        desc_row.addWidget(self.desc_edit)
+        lay.addLayout(desc_row)
+
+        # ── Control Module + Field Device (side-by-side) ───────────────────
+        cm_fd_lay = QHBoxLayout()
+
+        cm_group = QGroupBox("Control Module")
+        cm_group.setStyleSheet(
+            "QGroupBox{border:1px solid #555;border-radius:4px;margin-top:6px;"
+            "color:#F0F0F0;font-weight:bold;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}")
+        cm_form = QFormLayout(cm_group)
+        cm_form.setContentsMargins(8, 8, 8, 4)
+        cm_form.setSpacing(4)
+        cm_name_lbl = QLabel(composition.get("control_module", "NA") or "NA")
+        cm_name_lbl.setStyleSheet("color:#AAAAAA;")
+        cm_form.addRow("Name:", cm_name_lbl)
+        self.cm_type_edit = QLineEdit(tp.get("cm_type", composition.get("cm_type", "NA") or "NA"))
+        self.cm_desc_edit = QLineEdit(tp.get("cm_description", composition.get("cm_description", "NA") or "NA"))
+        cm_form.addRow("Type:", self.cm_type_edit)
+        cm_form.addRow("Description:", self.cm_desc_edit)
+        cm_fd_lay.addWidget(cm_group)
+
+        fd_group = QGroupBox("Field Device")
+        fd_group.setStyleSheet(
+            "QGroupBox{border:1px solid #555;border-radius:4px;margin-top:6px;"
+            "color:#F0F0F0;font-weight:bold;}"
+            "QGroupBox::title{subcontrol-origin:margin;left:8px;padding:0 4px;}")
+        fd_form = QFormLayout(fd_group)
+        fd_form.setContentsMargins(8, 8, 8, 4)
+        fd_form.setSpacing(4)
+        fd_name_lbl = QLabel(composition.get("field_device", "NA") or "NA")
+        fd_name_lbl.setStyleSheet("color:#AAAAAA;")
+        fd_form.addRow("Name:", fd_name_lbl)
+        self.fd_type_edit = QLineEdit(tp.get("fd_type", composition.get("fd_type", "NA") or "NA"))
+        self.fd_desc_edit = QLineEdit(tp.get("fd_description", composition.get("fd_description", "NA") or "NA"))
+        fd_form.addRow("Type:", self.fd_type_edit)
+        fd_form.addRow("Description:", self.fd_desc_edit)
+        cm_fd_lay.addWidget(fd_group)
+        lay.addLayout(cm_fd_lay)
+
+        # ── Signals table (mirrors Signal Typical configuration columns) ──
+        extra_headers = composition.get("extra_column_headers", [])
+        fixed_labels = [
+            "Signal Name", "Signal Type", "Signal Description",
+            "Count", "Prefix", "Suffix", "Resulting Signal",
+        ]
+        all_headers = fixed_labels + extra_headers
+        lay.addWidget(QLabel("<b>Signals:</b>"))
+        self.signals_table = QTableWidget(0, len(all_headers))
+        self.signals_table.setHorizontalHeaderLabels(all_headers)
+        hdr = self.signals_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        for ci in range(self._FIXED_COL_COUNT, len(all_headers)):
+            hdr.setSectionResizeMode(ci, QHeaderView.ResizeMode.Interactive)
+        self.signals_table.setColumnWidth(0, 110)
+        self.signals_table.setColumnWidth(1, 90)
+        self.signals_table.setColumnWidth(3, 60)
+        self.signals_table.setColumnWidth(4, 65)
+        self.signals_table.setColumnWidth(5, 65)
+        self.signals_table.verticalHeader().setVisible(False)
+        self.signals_table.setSelectionBehavior(
+            QAbstractItemView.SelectionBehavior.SelectRows)
+        self.signals_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked)
+
+        overrides = tp.get("signal_overrides", [])
+        signals = composition.get("signals", [])
+        ro_bg, ro_fg = self._ro_colors()
+        for i, sig in enumerate(signals):
+            ov = overrides[i] if i < len(overrides) else {}
+            r = self.signals_table.rowCount()
+            self.signals_table.insertRow(r)
+
+            sig_type = sig.get("signal_type", "")
+            count    = int(sig.get("count", 1) or 1)
+
+            # Read-only columns: Signal Name (0), Signal Type (1),
+            #                    Signal Description (2), Count (3),
+            #                    Resulting Signal (6)
+            ro_values = [
+                sig.get("signal_name", ""),        # 0
+                sig_type,                           # 1
+                sig.get("signal_description", ""),  # 2
+                str(count),                         # 3
+            ]
+            for ci, val in enumerate(ro_values):
+                item = QTableWidgetItem(val)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                item.setBackground(QBrush(ro_bg))
+                item.setForeground(QBrush(ro_fg))
+                self.signals_table.setItem(r, ci, item)
+
+            # Editable: Prefix (4), Suffix (5)
+            self.signals_table.setItem(r, 4, QTableWidgetItem(
+                ov.get("prefix", sig.get("prefix", "NA"))))
+            self.signals_table.setItem(r, 5, QTableWidgetItem(
+                ov.get("suffix", sig.get("suffix", "NA"))))
+
+            # Read-only: Resulting Signal (6) — computed from type × count
+            resulting = sig_type if count <= 1 else f"{count}{sig_type}"
+            res_item = QTableWidgetItem(resulting)
+            res_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            res_item.setBackground(QBrush(ro_bg))
+            res_item.setForeground(QBrush(ro_fg))
+            self.signals_table.setItem(r, 6, res_item)
+
+            # Editable extra columns (7+)
+            ov_extras = ov.get("extra_column_values",
+                               sig.get("extra_column_values", []))
+            for ec in range(len(extra_headers)):
+                val = ov_extras[ec] if ec < len(ov_extras) else ""
+                self.signals_table.setItem(r, self._FIXED_COL_COUNT + ec, QTableWidgetItem(val))
+
+        lay.addWidget(self.signals_table, stretch=1)
+
+        # ── OK / Cancel ───────────────────────────────────────────────────
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
                               QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
-        
+
         self.setLayout(lay)
 
-        # Pre-populate fields if editing existing marker
-        if tag_parts:
-            self.prefix_edit.setText(tag_parts.get("prefix", ""))
-            self.suffix_edit.setText(tag_parts.get("suffix", ""))
-            for field_value in tag_parts.get("middle_fields", []):
-                self._add_middle_field(field_value)
-
-        self._update_preview()
-    
-    def _add_middle_field(self, value: str = ""):
-        """Add a new middle field input."""
-        field_num = len(self._middle_fields) + 1
-        field_layout = QHBoxLayout()
-        
-        label = QLabel(f"Field {field_num}:")
-        label.setMaximumWidth(60)
-        
-        field_edit = QLineEdit(value)
-        field_edit.setPlaceholderText("e.g., 014")
-        field_edit.setMaximumWidth(120)
-        field_edit.textChanged.connect(self._update_preview)
-        
-        remove_btn = QPushButton("✕")
-        remove_btn.setMaximumWidth(30)
-        remove_btn.setStyleSheet(
-            "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
-            " border-radius:3px; font-size: 8pt; }"
-            "QPushButton:hover { background:#5A1A1A; }")
-        remove_btn.clicked.connect(lambda: self._remove_middle_field(field_edit))
-        
-        field_layout.addWidget(label)
-        field_layout.addWidget(field_edit)
-        field_layout.addWidget(remove_btn)
-        field_layout.addStretch()
-        
-        self.middle_fields_layout.addLayout(field_layout)
-        self._middle_fields.append(field_edit)
-        self._update_preview()
-    
-    def _remove_middle_field(self, field_edit: QLineEdit):
-        """Remove a specific middle field."""
-        if field_edit in self._middle_fields:
-            self._middle_fields.remove(field_edit)
-            field_edit.deleteLater()
-            self._update_preview()
-    
-    def _clear_middle_fields(self):
-        """Remove all middle fields."""
-        while self._middle_fields:
-            field = self._middle_fields.pop()
-            field.deleteLater()
-        
-        while self.middle_fields_layout.count():
-            item = self.middle_fields_layout.takeAt(0)
-            if item and isinstance(item, QHBoxLayout):
-                while item.count():
-                    w = item.takeAt(0).widget()
-                    if w:
-                        w.deleteLater()
-        
-        self._update_preview()
-    
-    def _update_preview(self):
-        """Update the signals list with complete tags (multiplied by count)."""
-        self.signals_list.clear()
-        
-        count = self.count_spin.value()
-        prefix = self.prefix_edit.text().strip()
-        suffix = self.suffix_edit.text().strip()
-        middle_fields = [f.text().strip() for f in self._middle_fields if f.text().strip()]
-        
-        for sig in self._composition['signals']:
-            # Multiply signal count by user's multiplier
-            original_count = 1  # Each signal appears once in the composition
-            multiplied_count = original_count * count
-            
-            # Build tag: prefix-<count>SIGNAL-fields-suffix
-            parts = []
-            
-            if prefix:
-                parts.append(prefix)
-            
-            # Include the multiplied count in the signal name
-            signal_display = f"{multiplied_count}{sig['signal_name']}" if multiplied_count > 1 else sig['signal_name']
-            parts.append(signal_display)
-            
-            if middle_fields:
-                parts.extend(middle_fields)
-            
-            if suffix:
-                parts.append(suffix)
-            
-            signal_tag = "-".join(parts)
-            display = f"{signal_tag}  ({sig['signal_type']})  —  {sig.get('signal_description', '')}"
-            self.signals_list.addItem(display)
-    
     @property
     def tag_parts(self) -> dict:
-        """Return all tag parts."""
+        """Return all placement overrides."""
+        extra_headers = self._composition.get("extra_column_headers", [])
+        overrides = []
+        for r in range(self.signals_table.rowCount()):
+            ev = [
+                (self.signals_table.item(r, self._FIXED_COL_COUNT + ec) or QTableWidgetItem()).text()
+                for ec in range(len(extra_headers))
+            ]
+            overrides.append({
+                "signal_description": (self.signals_table.item(r, 2) or QTableWidgetItem()).text(),
+                "prefix":             (self.signals_table.item(r, 4) or QTableWidgetItem()).text(),
+                "suffix":             (self.signals_table.item(r, 5) or QTableWidgetItem()).text(),
+                "extra_column_values": ev,
+            })
         return {
-            "prefix": self.prefix_edit.text().strip(),
-            "middle_fields": [f.text().strip() for f in self._middle_fields if f.text().strip()],
-            "suffix": self.suffix_edit.text().strip(),
-            "count": self.count_spin.value(),  # ← NEW: include count
+            "description":    self.desc_edit.text().strip(),
+            "cm_type":        self.cm_type_edit.text().strip(),
+            "cm_description": self.cm_desc_edit.text().strip(),
+            "fd_type":        self.fd_type_edit.text().strip(),
+            "fd_description": self.fd_desc_edit.text().strip(),
+            "signal_overrides": overrides,
         }
-    
-    @property
-    def count(self) -> int:
-        """Return the count multiplier."""
-        return self.count_spin.value()
             
 # ---------------------------------------------------------------------------
 # SignalCompositionTemplateDialog — manage templates
@@ -4964,31 +5233,9 @@ class SignalCompositionTemplateDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Signal Composition Templates")
-        self.setMinimumSize(900, 600)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QListWidget { background: #252525; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; }"
-            "QListWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
+        self.setWindowTitle("Signal Typical Templates")
+        self.setMinimumSize(1100, 720)
+        self.resize(1200, 780)
         self._templates = {}
         self._current_template_id = None
         self._build_ui()
@@ -4998,51 +5245,68 @@ class SignalCompositionTemplateDialog(QDialog):
         lay = QVBoxLayout()
         lay.setContentsMargins(16, 14, 16, 10)
         lay.setSpacing(10)
-        
+
         lay.addWidget(QLabel(
-            "<b>Signal Composition Templates</b><br>"
-            "<span style='color:#AAAAAA;font-size:8pt;'>"
-            "Create and manage reusable signal composition templates.</span>"))
-        
-        # Left panel: template list
+            "<b style='font-size:11pt;'>Signal Typical Templates</b><br>"
+            "<span style='color:#AAAAAA;font-size:9pt;'>"
+            "Create and manage reusable signal typical templates. "
+            "Use Export / Import to share templates across machines.</span>"))
+
+        # ── Left panel: template list ──────────────────────────────────────
         left_lay = QVBoxLayout()
-        left_lay.addWidget(QLabel("<b>Templates:</b>"))
-        
+        lbl_templates = QLabel("<b>Templates</b>")
+        lbl_templates.setStyleSheet("font-size:10pt;")
+        left_lay.addWidget(lbl_templates)
+
         self.template_list = QListWidget()
+        self.template_list.setMinimumWidth(220)
         self.template_list.itemSelectionChanged.connect(self._on_template_selected)
         left_lay.addWidget(self.template_list, stretch=1)
-        
+
         left_btn_lay = QHBoxLayout()
         new_btn = QPushButton("➕ New")
         del_btn = QPushButton("🗑 Delete")
+        new_btn.setMinimumHeight(28)
+        del_btn.setMinimumHeight(28)
         new_btn.clicked.connect(self._new_template)
         del_btn.clicked.connect(self._delete_template)
         left_btn_lay.addWidget(new_btn)
         left_btn_lay.addWidget(del_btn)
         left_lay.addLayout(left_btn_lay)
-        
+
         left_widget = QWidget()
         left_widget.setLayout(left_lay)
-        left_widget.setMaximumWidth(280)
-        
-        # Right panel: template editor
+
+        # ── Right panel: template editor ───────────────────────────────────
         right_lay = QVBoxLayout()
-        
-        # Title and description
-        right_lay.addWidget(QLabel("<b>Template Details:</b>"))
-        
+        right_lay.setSpacing(8)
+
+        lbl_details = QLabel("<b>Template Details</b>")
+        lbl_details.setStyleSheet("font-size:10pt;")
+        right_lay.addWidget(lbl_details)
+
+        # Form: name + description
+        form_lay = QFormLayout()
+        form_lay.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form_lay.setHorizontalSpacing(10)
+        form_lay.setVerticalSpacing(6)
+
         self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("Template name")
-        right_lay.addWidget(self.title_edit)
-        
+        self.title_edit.setPlaceholderText("Enter template name…")
+        self.title_edit.setMinimumHeight(28)
+        form_lay.addRow("<b>Name:</b>", self.title_edit)
+
         self.desc_edit = QPlainTextEdit()
-        self.desc_edit.setPlaceholderText("Template description")
-        self.desc_edit.setMaximumHeight(60)
-        right_lay.addWidget(self.desc_edit)
-        
-        # Signals table
-        right_lay.addWidget(QLabel("<b>Signals:</b>"))
-        
+        self.desc_edit.setPlaceholderText("Enter template description…")
+        self.desc_edit.setFixedHeight(72)
+        form_lay.addRow("<b>Description:</b>", self.desc_edit)
+
+        right_lay.addLayout(form_lay)
+
+        lbl_signals = QLabel("<b>Signals</b>")
+        lbl_signals.setStyleSheet("font-size:10pt;")
+        right_lay.addWidget(lbl_signals)
+
         self.signals_table = QTableWidget(0, 3)
         self.signals_table.setHorizontalHeaderLabels(
             ["Signal Name", "Signal Type", "Description"])
@@ -5057,78 +5321,115 @@ class SignalCompositionTemplateDialog(QDialog):
         self.signals_table.setSelectionMode(
             QAbstractItemView.SelectionMode.SingleSelection)
         self.signals_table.verticalHeader().setVisible(False)
+        self.signals_table.setMinimumHeight(200)
         right_lay.addWidget(self.signals_table, stretch=1)
-        
-        # Signal buttons
+
+        # Signal row buttons
         sig_btn_lay = QHBoxLayout()
         add_sig_btn = QPushButton("➕ Add Signal")
         rem_sig_btn = QPushButton("🗑 Remove Signal")
+        add_sig_btn.setMinimumHeight(28)
+        rem_sig_btn.setMinimumHeight(28)
         add_sig_btn.clicked.connect(self._add_signal_row)
         rem_sig_btn.clicked.connect(self._remove_signal_row)
         sig_btn_lay.addWidget(add_sig_btn)
         sig_btn_lay.addWidget(rem_sig_btn)
         sig_btn_lay.addStretch()
         right_lay.addLayout(sig_btn_lay)
-        
-        # Save/Clear buttons
+
+        # Save / Clear buttons
         save_btn_lay = QHBoxLayout()
         save_btn = QPushButton("💾 Save Template")
         clear_btn = QPushButton("🔄 Clear")
+        save_btn.setMinimumHeight(30)
+        clear_btn.setMinimumHeight(30)
         save_btn.clicked.connect(self._save_template)
         clear_btn.clicked.connect(self._clear_form)
         save_btn_lay.addWidget(save_btn)
         save_btn_lay.addWidget(clear_btn)
         save_btn_lay.addStretch()
         right_lay.addLayout(save_btn_lay)
-        
+
         right_widget = QWidget()
         right_widget.setLayout(right_lay)
-        
-        # Main split
-        main_lay = QHBoxLayout()
-        main_lay.addWidget(left_widget, stretch=0)
-        main_lay.addWidget(right_widget, stretch=1)
-        lay.addLayout(main_lay, stretch=1)
-        
-        # Buttons
+
+        # ── Splitter (resizable left / right) ─────────────────────────────
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([280, 820])
+        lay.addWidget(splitter, stretch=1)
+
+        # ── Export / Import row ────────────────────────────────────────────
+        io_lay = QHBoxLayout()
+        export_btn = QPushButton("📤  Export Templates to Excel…")
+        import_btn = QPushButton("📥  Import Templates from Excel…")
+        export_btn.setMinimumHeight(30)
+        import_btn.setMinimumHeight(30)
+        export_btn.setToolTip(
+            "Export all templates to an Excel file.\n"
+            "Each row represents one signal; template title and description\n"
+            "are repeated across all rows belonging to the same template.")
+        import_btn.setToolTip(
+            "Import templates from a previously exported (or manually filled) Excel file.\n"
+            "Columns: Template Title | Template Description | Signal Name | Signal Type | Signal Description")
+        export_btn.clicked.connect(self._export_templates_xlsx)
+        import_btn.clicked.connect(self._import_templates_xlsx)
+        io_lay.addWidget(export_btn)
+        io_lay.addWidget(import_btn)
+        io_lay.addStretch()
+        lay.addLayout(io_lay)
+
+        # ── Dialog button box ──────────────────────────────────────────────
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
         bb.accepted.connect(self.accept)
         lay.addWidget(bb)
-        
+
         self.setLayout(lay)
     
     def _load_default_templates(self):
-        """Load default templates (stored in memory for this session)."""
-        self._templates = {
-            1: {
-                "id": 1,
-                "title": "On-Off Valve",
-                "description": "2/2 Solenoid Valve",
-                "signals": [
-                    {"signal_name": "XS", "signal_type": "HDO", "signal_description": "Valve position"},
-                    {"signal_name": "ZSH", "signal_type": "HDI", "signal_description": "Open limit"},
-                    {"signal_name": "ZSL", "signal_type": "HDI", "signal_description": "Closed limit"}
-                ]
-            },
-            2: {
-                "id": 2,
-                "title": "Check Valve",
-                "description": "Inline Check Valve",
-                "signals": [
-                    {"signal_name": "P_in", "signal_type": "AI", "signal_description": "Inlet Pressure"},
-                    {"signal_name": "P_out", "signal_type": "AI", "signal_description": "Outlet Pressure"}
-                ]
-            },
-            3: {
-                "id": 3,
-                "title": "Flow Meter",
-                "description": "Flow Rate Meter",
-                "signals": [
-                    {"signal_name": "FLOW", "signal_type": "AI", "signal_description": "Flow rate"},
-                    {"signal_name": "PULSE", "signal_type": "HDI", "signal_description": "Pulse output"}
-                ]
-            }
-        }
+        """Load templates from the database. Seed three built-in defaults if empty."""
+        self._templates = db_load_all_templates()
+        if not self._templates:
+            defaults = [
+                {
+                    "title": "On-Off Valve",
+                    "description": "2/2 Solenoid Valve",
+                    "signals": [
+                        {"signal_name": "XS",  "signal_type": "HDO",
+                         "signal_description": "Valve position"},
+                        {"signal_name": "ZSH", "signal_type": "HDI",
+                         "signal_description": "Open limit"},
+                        {"signal_name": "ZSL", "signal_type": "HDI",
+                         "signal_description": "Closed limit"},
+                    ],
+                },
+                {
+                    "title": "Check Valve",
+                    "description": "Inline Check Valve",
+                    "signals": [
+                        {"signal_name": "P_in",  "signal_type": "AI",
+                         "signal_description": "Inlet Pressure"},
+                        {"signal_name": "P_out", "signal_type": "AI",
+                         "signal_description": "Outlet Pressure"},
+                    ],
+                },
+                {
+                    "title": "Flow Meter",
+                    "description": "Flow Rate Meter",
+                    "signals": [
+                        {"signal_name": "FLOW",  "signal_type": "AI",
+                         "signal_description": "Flow rate"},
+                        {"signal_name": "PULSE", "signal_type": "HDI",
+                         "signal_description": "Pulse output"},
+                    ],
+                },
+            ]
+            for d in defaults:
+                tid = db_save_new_template(d["title"], d["description"], d["signals"])
+                self._templates[tid] = {"id": tid, **d}
         self._refresh_template_list()
     
     def _refresh_template_list(self):
@@ -5161,18 +5462,26 @@ class SignalCompositionTemplateDialog(QDialog):
         for sig in signals:
             r = self.signals_table.rowCount()
             self.signals_table.insertRow(r)
-            
+
             self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-            self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
+            cb = QComboBox()
+            cb.addItems(_SIGNAL_IO_TYPES)
+            idx = cb.findText(sig.get("signal_type", "").strip())
+            if idx >= 0:
+                cb.setCurrentIndex(idx)
+            self.signals_table.setCellWidget(r, 1, cb)
             self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
-    
+
     def _add_signal_row(self):
         """Add empty signal row."""
         r = self.signals_table.rowCount()
         self.signals_table.insertRow(r)
-        for col in range(3):
-            self.signals_table.setItem(r, col, QTableWidgetItem(""))
-    
+        self.signals_table.setItem(r, 0, QTableWidgetItem(""))
+        cb = QComboBox()
+        cb.addItems(_SIGNAL_IO_TYPES)
+        self.signals_table.setCellWidget(r, 1, cb)
+        self.signals_table.setItem(r, 2, QTableWidgetItem(""))
+
     def _remove_signal_row(self):
         """Remove selected signal row."""
         r = self.signals_table.currentRow()
@@ -5192,68 +5501,400 @@ class SignalCompositionTemplateDialog(QDialog):
         self.title_edit.setFocus()
     
     def _save_template(self):
-        """Save current template."""
+        """Save current template to the database."""
         title = self.title_edit.text().strip()
         if not title:
             QMessageBox.warning(self, "Required", "Template name is required.")
             return
-        
+
         # Collect signals
         signals = []
         for r in range(self.signals_table.rowCount()):
             sig_name = (self.signals_table.item(r, 0) or QTableWidgetItem()).text().strip()
-            sig_type = (self.signals_table.item(r, 1) or QTableWidgetItem()).text().strip()
+            cb = self.signals_table.cellWidget(r, 1)
+            sig_type = cb.currentText() if isinstance(cb, QComboBox) else (
+                self.signals_table.item(r, 1) or QTableWidgetItem()).text().strip()
             sig_desc = (self.signals_table.item(r, 2) or QTableWidgetItem()).text().strip()
-            
+
             if sig_name and sig_type:
                 signals.append({
                     "signal_name": sig_name,
                     "signal_type": sig_type,
-                    "signal_description": sig_desc
+                    "signal_description": sig_desc,
                 })
-        
+
         if not signals:
             QMessageBox.warning(self, "Required", "At least one signal is required.")
             return
-        
+
+        description = self.desc_edit.toPlainText().strip()
+
         if self._current_template_id is None:
-            # New template
-            new_id = max(self._templates.keys()) + 1 if self._templates else 1
+            # New template — persist to DB
+            new_id = db_save_new_template(title, description, signals)
         else:
+            # Update existing — persist to DB
             new_id = self._current_template_id
-        
+            db_update_template(new_id, title, description, signals)
+
         self._templates[new_id] = {
-            "id": new_id,
-            "title": title,
-            "description": self.desc_edit.toPlainText().strip(),
-            "signals": signals
+            "id":          new_id,
+            "title":       title,
+            "description": description,
+            "signals":     signals,
         }
-        
         self._current_template_id = new_id
         self._refresh_template_list()
         QMessageBox.information(self, "Saved", f"Template '{title}' saved successfully.")
     
     def _delete_template(self):
-        """Delete selected template."""
+        """Delete selected template from the database."""
         items = self.template_list.selectedItems()
         if not items:
             QMessageBox.warning(self, "No Selection", "Please select a template to delete.")
             return
-        
+
         template_id = items[0].data(Qt.ItemDataRole.UserRole)
         title = self._templates[template_id]["title"]
-        
+
         ans = QMessageBox.question(
             self, "Delete Template",
             f"Delete template '{title}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        
+
         if ans == QMessageBox.StandardButton.Yes:
+            db_delete_template(template_id)
             del self._templates[template_id]
             if self._current_template_id == template_id:
                 self._clear_form()
             self._refresh_template_list()
     
+    def _export_templates_xlsx(self):
+        """Export all templates to an Excel file.
+
+        Format: one row per signal.  Template Title and Template Description
+        are repeated on every row that belongs to the same template so that
+        the file can be round-tripped through the importer without any
+        manual editing.
+
+        Columns (A-E):
+            A  Template Title
+            B  Template Description
+            C  Signal Name
+            D  Signal Type
+            E  Signal Description
+        """
+        if not self._templates:
+            QMessageBox.information(self, "Nothing to Export",
+                                    "No templates to export.")
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Signal Typical Templates",
+            "signal_typical_templates.xlsx",
+            "Excel Files (*.xlsx)")
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.utils import get_column_letter
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Templates"
+            ws.freeze_panes = "A2"
+            hdr_font  = Font(bold=True, color="FFFFFF")
+            hdr_fill  = PatternFill("solid", start_color="1F4E79")
+            hdr_align = Alignment(horizontal="center", vertical="center")
+            COLS = [
+                ("Template Title",       30),
+                ("Template Description", 36),
+                ("Signal Name",          20),
+                ("Signal Type",          18),
+                ("Signal Description",   36),
+            ]
+            for ci, (hdr, width) in enumerate(COLS, 1):
+                cell = ws.cell(row=1, column=ci, value=hdr)
+                cell.font  = hdr_font
+                cell.fill  = hdr_fill
+                cell.alignment = hdr_align
+                ws.column_dimensions[get_column_letter(ci)].width = width
+            row = 2
+            for tmpl in self._templates.values():
+                signals = tmpl.get("signals", [])
+                if not signals:
+                    # Export a placeholder row even when a template has no
+                    # signals so the template name / description is preserved.
+                    ws.cell(row=row, column=1, value=tmpl.get("title", ""))
+                    ws.cell(row=row, column=2, value=tmpl.get("description", ""))
+                    ws.cell(row=row, column=3, value="")
+                    ws.cell(row=row, column=4, value="")
+                    ws.cell(row=row, column=5, value="")
+                    row += 1
+                else:
+                    for sig in signals:
+                        ws.cell(row=row, column=1, value=tmpl.get("title", ""))
+                        ws.cell(row=row, column=2, value=tmpl.get("description", ""))
+                        ws.cell(row=row, column=3, value=sig.get("signal_name", ""))
+                        ws.cell(row=row, column=4, value=sig.get("signal_type", ""))
+                        ws.cell(row=row, column=5, value=sig.get("signal_description", ""))
+                        row += 1
+            wb.save(path)
+            wb.close()
+            QMessageBox.information(
+                self, "Export Successful",
+                f"Exported {len(self._templates)} template(s) to:\n{path}\n\n"
+                "Note: each row represents one signal. Template Title and\n"
+                "Description are repeated for every signal in that template.")
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", str(e))
+
+    def _import_templates_xlsx(self):
+        """Import templates from an Excel file with duplicate-title handling.
+
+        Expected column order:
+            A  Template Title       (required)
+            B  Template Description (optional)
+            C  Signal Name          (optional – template may have no signals)
+            D  Signal Type          (optional – defaults to empty string)
+            E  Signal Description   (optional)
+
+        Row 1 is treated as a header row if cell A1 looks like a column heading
+        (e.g. "Template Title", "Title", etc.).  If cell A1 contains real data
+        (e.g. an actual template name) the row is treated as data so that files
+        created manually without a header still import correctly.
+
+        Multiple rows with the same Template Title are grouped into a single
+        template; Title and Description are taken from the first row of each
+        group (subsequent rows may repeat the same values or leave them blank).
+        """
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Signal Typical Templates",
+            "", "Excel Files (*.xlsx)")
+        if not path:
+            return
+        try:
+            from openpyxl import load_workbook
+            wb = load_workbook(path, read_only=True, data_only=True)
+            ws = wb.active
+
+            # ── Read all rows starting at row 1 ───────────────────────────
+            all_rows = list(ws.iter_rows(min_row=1, values_only=True))
+            wb.close()
+            if not all_rows:
+                QMessageBox.warning(self, "Empty File",
+                                    "No data rows found in the Excel file.")
+                return
+
+            # ── Detect whether row 1 is a header ──────────────────────────
+            # If cell A1 contains a known header keyword we skip that row;
+            # otherwise we treat row 1 as real data (manually created files).
+            _HEADER_KEYWORDS = {
+                "template title", "template name", "title", "name",
+                "signal name", "signal type", "signal description",
+                "description",
+            }
+            first_cell_val = all_rows[0][0] if all_rows[0] else None
+            first_cell = str(first_cell_val).strip().lower() if first_cell_val is not None else ""
+            is_header_row = first_cell in _HEADER_KEYWORDS or first_cell.startswith("template")
+            rows = all_rows[1:] if is_header_row else all_rows
+
+            if not rows:
+                QMessageBox.warning(self, "Empty File",
+                                    "No data rows found in the Excel file.")
+                return
+
+            # ── Parse rows → dict keyed by title ──────────────────────────
+            imported: dict[str, dict] = {}
+            for row in rows:
+                if not row:
+                    continue
+                # Pad to 5 columns so index access is always safe
+                padded = list(row) + [None] * 5
+                title    = str(padded[0]).strip() if padded[0] is not None else ""
+                desc     = str(padded[1]).strip() if padded[1] is not None else ""
+                sig_name = str(padded[2]).strip() if padded[2] is not None else ""
+                sig_type = str(padded[3]).strip() if padded[3] is not None else ""
+                sig_desc = str(padded[4]).strip() if padded[4] is not None else ""
+
+                if not title:
+                    continue  # skip blank-title rows
+
+                if title not in imported:
+                    imported[title] = {
+                        "title":       title,
+                        "description": desc,
+                        "signals":     [],
+                    }
+                # Add a signal row whenever at least the Signal Name is present.
+                # Signal Type and Description default to empty string if omitted.
+                if sig_name:
+                    imported[title]["signals"].append({
+                        "signal_name":        sig_name,
+                        "signal_type":        sig_type,
+                        "signal_description": sig_desc,
+                    })
+
+            if not imported:
+                QMessageBox.warning(self, "No Templates",
+                                    "Could not find any valid template data.\n\n"
+                                    "Make sure the file uses the following column order "
+                                    "(a header row is optional):\n"
+                                    "A: Template Title  B: Template Description\n"
+                                    "C: Signal Name     D: Signal Type  E: Signal Description")
+                return
+
+            # ── Detect conflicts ───────────────────────────────────────────
+            existing_by_title: dict[str, dict] = {
+                t["title"]: t for t in self._templates.values()
+            }
+            conflicts = [t for t in imported if t in existing_by_title]
+
+            # ── Ask once for bulk strategy when there are conflicts ────────
+            # Options:  "Overwrite All"  |  "Add All as New"  |  "Skip All"
+            #           |  "Decide per template"
+            bulk_action = None   # None means: decide per template
+            if conflicts:
+                mb = QMessageBox(self)
+                mb.setWindowTitle("Duplicate Templates Detected")
+                mb.setText(
+                    f"<b>{len(conflicts)}</b> template(s) in the file already exist "
+                    f"in the system:<br><br>"
+                    + "<br>".join(f"• {c}" for c in conflicts[:10])
+                    + ("<br>…" if len(conflicts) > 10 else "")
+                    + "<br><br>How would you like to handle <b>all</b> conflicts?")
+                ow_all_btn  = mb.addButton(
+                    "Overwrite All",     QMessageBox.ButtonRole.AcceptRole)
+                new_all_btn = mb.addButton(
+                    "Add All as New",    QMessageBox.ButtonRole.YesRole)
+                skip_all_btn = mb.addButton(
+                    "Skip All",          QMessageBox.ButtonRole.NoRole)
+                per_btn     = mb.addButton(
+                    "Decide per Template", QMessageBox.ButtonRole.ResetRole)
+                mb.setDefaultButton(per_btn)
+                mb.exec()
+                clicked = mb.clickedButton()
+                if clicked == ow_all_btn:
+                    bulk_action = "overwrite"
+                elif clicked == new_all_btn:
+                    bulk_action = "add_new"
+                elif clicked == skip_all_btn:
+                    bulk_action = "skip"
+                else:
+                    bulk_action = None  # decide per template
+
+            # ── Process each imported template ─────────────────────────────
+            # Remember the template that is currently open in the editor so
+            # we can reload it after the list refresh (template_list.clear()
+            # triggers _on_template_selected → _clear_form(), blanking the
+            # editor even when the overwrite updated its signals).
+            editing_id_before = self._current_template_id
+
+            added = 0
+            overwritten = 0
+            skipped = 0
+
+            for tmpl in imported.values():
+                title       = tmpl["title"]
+                signals     = tmpl["signals"]
+                description = tmpl["description"]
+
+                if title in existing_by_title:
+                    action = bulk_action
+                    if action is None:
+                        # Per-template dialog
+                        mb2 = QMessageBox(self)
+                        mb2.setWindowTitle("Duplicate Template")
+                        mb2.setText(
+                            f"A template named <b>{title}</b> already exists.<br><br>"
+                            "What would you like to do?")
+                        ow_btn   = mb2.addButton(
+                            "Overwrite existing",  QMessageBox.ButtonRole.AcceptRole)
+                        new_btn2 = mb2.addButton(
+                            "Add as new template", QMessageBox.ButtonRole.YesRole)
+                        sk_btn   = mb2.addButton(
+                            "Skip",                QMessageBox.ButtonRole.RejectRole)
+                        mb2.setDefaultButton(sk_btn)
+                        mb2.exec()
+                        c2 = mb2.clickedButton()
+                        if c2 == ow_btn:
+                            action = "overwrite"
+                        elif c2 == new_btn2:
+                            action = "add_new"
+                        else:
+                            action = "skip"
+
+                    if action == "overwrite":
+                        existing = existing_by_title[title]
+                        db_update_template(
+                            existing["id"], title, description, signals)
+                        existing["description"] = description
+                        existing["signals"]     = signals
+                        overwritten += 1
+                    elif action == "add_new":
+                        new_id = db_save_new_template(title, description, signals)
+                        self._templates[new_id] = {
+                            "id":          new_id,
+                            "title":       title,
+                            "description": description,
+                            "signals":     signals,
+                        }
+                        added += 1
+                    else:
+                        skipped += 1
+                else:
+                    # No conflict — insert directly
+                    new_id = db_save_new_template(title, description, signals)
+                    self._templates[new_id] = {
+                        "id":          new_id,
+                        "title":       title,
+                        "description": description,
+                        "signals":     signals,
+                    }
+                    added += 1
+
+            # ── Reload from DB + refresh list ──────────────────────────────
+            # Reloading from the DB guarantees the in-memory state mirrors
+            # exactly what was written, regardless of any edge case in the
+            # in-memory patch above.
+            self._templates = db_load_all_templates()
+            self._refresh_template_list()
+
+            # If the template that was open in the editor was affected by the
+            # import, reload its form so the user immediately sees the updated
+            # signals (without having to re-click the item in the list).
+            if editing_id_before is not None and editing_id_before in self._templates:
+                reloaded = self._templates[editing_id_before]
+                self._current_template_id = editing_id_before
+                self.title_edit.setText(reloaded["title"])
+                self.desc_edit.setPlainText(reloaded["description"])
+                self._populate_signals_table(reloaded["signals"])
+                # Re-select the item in the list so it stays highlighted.
+                # Block signals to avoid triggering _on_template_selected
+                # again (which would overwrite the text we just set).
+                self.template_list.blockSignals(True)
+                for i in range(self.template_list.count()):
+                    item = self.template_list.item(i)
+                    if item.data(Qt.ItemDataRole.UserRole) == editing_id_before:
+                        self.template_list.setCurrentItem(item)
+                        break
+                self.template_list.blockSignals(False)
+
+            parts = []
+            if added:
+                parts.append(f"{added} added")
+            if overwritten:
+                parts.append(f"{overwritten} overwritten")
+            if skipped:
+                parts.append(f"{skipped} skipped")
+            QMessageBox.information(
+                self, "Import Complete",
+                f"Import finished: {', '.join(parts) or 'nothing changed'}.\n"
+                f"Source: {path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Import Failed", str(e))
+
     def get_templates(self) -> dict:
         """Return all templates."""
         return self._templates
@@ -5269,19 +5910,9 @@ class NoProjectDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Signal Compositions Configuration")
+        self.setWindowTitle("Signal Typicals Configuration")
         self.setMinimumWidth(500)
         self.setMinimumHeight(380)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 6px 12px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-        )
-        
         lay = QVBoxLayout()
         lay.setContentsMargins(24, 24, 24, 24)
         lay.setSpacing(16)
@@ -5293,15 +5924,15 @@ class NoProjectDialog(QDialog):
         lay.addWidget(title)
         
         # Main message
-        msg = QLabel("<b>Signal Compositions Configuration</b>")
+        msg = QLabel("<b>Signal Typicals Configuration</b>")
         msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         msg.setStyleSheet("font-size: 14pt; color: #7EC8F0;")
         lay.addWidget(msg)
         
         # Instructions
         instructions = QLabel(
-            "Signal compositions are configured on a <b>per-project basis</b>.<br><br>"
-            "To configure signal compositions:<br><br>"
+            "Signal typicals are configured on a <b>per-project basis</b>.<br><br>"
+            "To configure signal typicals:<br><br>"
             "<span style='color: #90CAF9;'><b>1. Open or Create a Project</b></span><br>"
             "   • Click the <b>Project Panel</b> (📁) in the toolbar<br>"
             "   • Create a new project or open an existing one<br><br>"
@@ -5310,8 +5941,8 @@ class NoProjectDialog(QDialog):
             "   • Or right-click project → Add PDF file(s)<br><br>"
             "<span style='color: #90CAF9;'><b>3. Open PDF and Configure</b></span><br>"
             "   • Open the PDF file from the project<br>"
-            "   • Go to Edit → Configure Signal Compositions<br><br>"
-            "Signal compositions will then be available when placing markers<br>"
+            "   • Go to Edit → Configure Signal Typicals<br><br>"
+            "Signal typicals will then be available when placing markers<br>"
             "on that project's PDFs."
         )
         instructions.setWordWrap(True)
@@ -5332,6 +5963,11 @@ class NoProjectDialog(QDialog):
         self.setLayout(lay)
         
 # ---------------------------------------------------------------------------
+# Allowed IO signal types (used in both config and template dialogs)
+# ---------------------------------------------------------------------------
+_SIGNAL_IO_TYPES = ("HDI", "HDO", "HAI", "HAO", "SDI", "SDO", "SAI", "SAO")
+
+# ---------------------------------------------------------------------------
 # SignalCompositionConfigDialog — manage signal compositions (project-specific)
 # ---------------------------------------------------------------------------
 class SignalCompositionConfigDialog(QDialog):
@@ -5340,6 +5976,8 @@ class SignalCompositionConfigDialog(QDialog):
     No longer uses Default owner - all compositions are project-specific.
     """
     
+    _FIXED_COL_COUNT = 7  # Signal Name, Type, Desc, Count, Prefix, Suffix, Resulting Signal
+    
     def __init__(self, owner_id: int, owner_name: str, parent=None):
         """
         Args:
@@ -5347,36 +5985,12 @@ class SignalCompositionConfigDialog(QDialog):
             owner_name: Display name (project name)
         """
         super().__init__(parent)
-        self.setWindowTitle(f"Signal Compositions - {owner_name}")
+        self.setWindowTitle(f"Signal Typicals - {owner_name}")
         self.setMinimumSize(950, 650)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QListWidget { background: #252525; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; }"
-            "QListWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self._owner_id = owner_id
         self._owner_name = owner_name
         self._current_comp_id = None
         self._compositions = db_load_compositions_by_owner(owner_id)
-        
         self._build_ui()
     
     def _build_ui(self):
@@ -5385,18 +5999,27 @@ class SignalCompositionConfigDialog(QDialog):
         lay.setSpacing(10)
         
         lay.addWidget(QLabel(
-            f"<b>Signal Compositions for {self._owner_name}</b><br>"
             "<span style='color:#AAAAAA;font-size:8pt;'>"
-            "Define signal compositions with detailed signal information.</span>"))
+            "Define signal typicals with detailed signal information.</span>"))
         
-        # ── Left Panel: Composition List ──────────────────────────────────
+        # ── Left Panel: Typical Tree ──────────────────────────────────────
         left_lay = QVBoxLayout()
-        left_lay.addWidget(QLabel("<b>Compositions:</b>"))
-        
-        self.comp_list = QListWidget()
-        self.comp_list.itemSelectionChanged.connect(self._on_comp_selected)
-        left_lay.addWidget(self.comp_list, stretch=1)
-        
+        left_lay.addWidget(QLabel("<b>Typicals:</b>"))
+
+        self.comp_tree = QTreeWidget()
+        self.comp_tree.setHeaderHidden(True)
+        self.comp_tree.setRootIsDecorated(True)
+        self.comp_tree.setSortingEnabled(False)
+        self.comp_tree.itemSelectionChanged.connect(self._on_comp_selected)
+        # Enable drag-and-drop between categories
+        self.comp_tree.setDragEnabled(True)
+        self.comp_tree.setAcceptDrops(True)
+        self.comp_tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.comp_tree.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.comp_tree.model().rowsInserted.connect(self._schedule_tree_sync)
+        left_lay.addWidget(self.comp_tree, stretch=1)
+
+        # Typical buttons (new / delete)
         left_btn_lay = QHBoxLayout()
         new_comp_btn = QPushButton("➕ New")
         del_comp_btn = QPushButton("🗑 Delete")
@@ -5405,6 +6028,23 @@ class SignalCompositionConfigDialog(QDialog):
         left_btn_lay.addWidget(new_comp_btn)
         left_btn_lay.addWidget(del_comp_btn)
         left_lay.addLayout(left_btn_lay)
+
+        # Category management buttons
+        left_lay.addWidget(QLabel("<b>Categories:</b>"))
+        cat_btn_lay = QHBoxLayout()
+        add_cat_btn    = QPushButton("➕ Add")
+        rename_cat_btn = QPushButton("✏️ Rename")
+        del_cat_btn    = QPushButton("🗑 Delete")
+        add_cat_btn.setToolTip("Add a new category to the tree")
+        rename_cat_btn.setToolTip("Rename the selected category")
+        del_cat_btn.setToolTip("Delete empty category (or reassign its typicals to General)")
+        add_cat_btn.clicked.connect(self._add_category)
+        rename_cat_btn.clicked.connect(self._rename_category)
+        del_cat_btn.clicked.connect(self._delete_category)
+        cat_btn_lay.addWidget(add_cat_btn)
+        cat_btn_lay.addWidget(rename_cat_btn)
+        cat_btn_lay.addWidget(del_cat_btn)
+        left_lay.addLayout(cat_btn_lay)
         
         left_widget = QWidget()
         left_widget.setLayout(left_lay)
@@ -5412,41 +6052,129 @@ class SignalCompositionConfigDialog(QDialog):
         
         # ── Right Panel: Composition Editor ───────────────────────────────
         right_lay = QVBoxLayout()
-        
+
         # Title and description
-        right_lay.addWidget(QLabel("<b>Composition Details:</b>"))
-        
+        right_lay.addWidget(QLabel("<b>Typical Details:</b>"))
+
+        # Category field
+        cat_row = QHBoxLayout()
+        cat_row.addWidget(QLabel("Category:"))
+        self.cat_edit = QLineEdit()
+        self.cat_edit.setPlaceholderText("e.g., HVAC, Valves (leave blank for General)")
+        self.cat_edit.setToolTip("Group this typical under a category in the tree")
+        cat_row.addWidget(self.cat_edit)
+        right_lay.addLayout(cat_row)
+
         self.title_edit = QLineEdit()
         self.title_edit.setPlaceholderText("e.g., On-Off Valve")
         right_lay.addWidget(self.title_edit)
-        
-        self.desc_edit = QPlainTextEdit()
-        self.desc_edit.setPlaceholderText("e.g., 2/2 Solenoid Valve")
-        self.desc_edit.setMaximumHeight(60)
-        right_lay.addWidget(self.desc_edit)
-        
+
+        # Description fields — first field always present; more via button
+        right_lay.addWidget(QLabel("Description:"))
+        self._desc_fields: list = []
+        self._desc_buttons: list = []
+        self._desc_container = QWidget()
+        self._desc_layout = QVBoxLayout(self._desc_container)
+        self._desc_layout.setContentsMargins(0, 0, 0, 0)
+        self._desc_layout.setSpacing(4)
+        self._add_desc_field()  # always show at least one field
+        right_lay.addWidget(self._desc_container)
+
+        self._add_desc_btn = QPushButton("➕ Add Description")
+        self._add_desc_btn.clicked.connect(lambda: self._add_desc_field())
+        right_lay.addWidget(self._add_desc_btn)
+
+        # Control Module and Field Device as horizontal single-row tables
+        cm_fd_outer = QHBoxLayout()
+
+        # Control Module table
+        cm_widget = QWidget()
+        cm_vlay   = QVBoxLayout(cm_widget)
+        cm_vlay.setContentsMargins(0, 0, 0, 0)
+        cm_vlay.setSpacing(2)
+        cm_vlay.addWidget(QLabel("<b>Control Module:</b>"))
+        self.cm_table = QTableWidget(1, 3)
+        self.cm_table.setHorizontalHeaderLabels(["Name", "Type", "Description"])
+        self.cm_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Interactive)
+        self.cm_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Interactive)
+        self.cm_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch)
+        self.cm_table.verticalHeader().setVisible(False)
+        self.cm_table.setFixedHeight(56)
+        self.cm_table.setColumnWidth(0, 100)
+        self.cm_table.setColumnWidth(1, 90)
+        # Name cell — editable (plain text; read-only lock comes after load)
+        self.cm_name_edit = QTableWidgetItem("NA")
+        self.cm_table.setItem(0, 0, self.cm_name_edit)
+        self.cm_type_item = QTableWidgetItem("CM")
+        self.cm_type_item.setFlags(Qt.ItemFlag.ItemIsEnabled)  # read-only: always "CM"
+        self.cm_table.setItem(0, 1, self.cm_type_item)
+        self.cm_desc_item = QTableWidgetItem("NA")
+        self.cm_table.setItem(0, 2, self.cm_desc_item)
+        cm_vlay.addWidget(self.cm_table)
+        cm_fd_outer.addWidget(cm_widget)
+
+        # Field Device table
+        fd_widget = QWidget()
+        fd_vlay   = QVBoxLayout(fd_widget)
+        fd_vlay.setContentsMargins(0, 0, 0, 0)
+        fd_vlay.setSpacing(2)
+        fd_vlay.addWidget(QLabel("<b>Field Device:</b>"))
+        self.fd_table = QTableWidget(1, 3)
+        self.fd_table.setHorizontalHeaderLabels(["Name", "Type", "Description"])
+        self.fd_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Interactive)
+        self.fd_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Interactive)
+        self.fd_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch)
+        self.fd_table.verticalHeader().setVisible(False)
+        self.fd_table.setFixedHeight(56)
+        self.fd_table.setColumnWidth(0, 100)
+        self.fd_table.setColumnWidth(1, 90)
+        self.fd_name_item = QTableWidgetItem("NA")
+        self.fd_table.setItem(0, 0, self.fd_name_item)
+        self.fd_type_item = QTableWidgetItem("NA")
+        self.fd_table.setItem(0, 1, self.fd_type_item)
+        self.fd_desc_item = QTableWidgetItem("NA")
+        self.fd_table.setItem(0, 2, self.fd_desc_item)
+        fd_vlay.addWidget(self.fd_table)
+        cm_fd_outer.addWidget(fd_widget)
+
+        right_lay.addLayout(cm_fd_outer)
+
+        # Back-compat aliases so the rest of the code that reads .text() works
+        # We override the read helpers below instead.
+
         # Composition display
-        right_lay.addWidget(QLabel("<b>Composition:</b>"))
+        right_lay.addWidget(QLabel("<b>Typical:</b>"))
         self.composition_display = QLabel("")
         self.composition_display.setStyleSheet("color: #7EC8F0; font-weight: bold; font-size: 11pt;")
         right_lay.addWidget(self.composition_display)
         
-        # NEW: Signals table with 5 columns
+        # Signals table with 7 columns
         right_lay.addWidget(QLabel("<b>Signals Configuration:</b>"))
         
-        self.signals_table = QTableWidget(0, 5)
+        self.signals_table = QTableWidget(0, 7)
         self.signals_table.setHorizontalHeaderLabels(
-            ["Signal Name*", "Signal Type*", "Signal Description*", "Count*", "Resulting Signal on PDF"])
-        self.signals_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.ResizeToContents)
-        self.signals_table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.ResizeToContents)
-        self.signals_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch)
-        self.signals_table.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.ResizeMode.ResizeToContents)
-        self.signals_table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.Stretch)
+            ["Signal Name*", "Signal Type*", "Signal Description*",
+             "Count*", "Prefix*", "Suffix*", "Resulting Signal on PDF"])
+        hdr = self.signals_table.horizontalHeader()
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.Stretch)
+        # Set initial widths large enough to show the full header text
+        self.signals_table.setColumnWidth(0, 110)  # "Signal Name*"
+        self.signals_table.setColumnWidth(1, 105)  # "Signal Type*"
+        self.signals_table.setColumnWidth(3, 65)   # "Count*"
+        self.signals_table.setColumnWidth(4, 65)   # "Prefix*"
+        self.signals_table.setColumnWidth(5, 65)   # "Suffix*"
         self.signals_table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows)
         self.signals_table.setSelectionMode(
@@ -5455,14 +6183,23 @@ class SignalCompositionConfigDialog(QDialog):
         self.signals_table.itemChanged.connect(self._update_resulting_signal)
         right_lay.addWidget(self.signals_table, stretch=1)
         
-        # Signal buttons
+        # Signal row and column buttons
         sig_btn_lay = QHBoxLayout()
         add_sig_btn = QPushButton("➕ Add Signal")
         rem_sig_btn = QPushButton("🗑 Remove Signal")
+        add_col_btn = QPushButton("➕ Add Column")
+        rem_col_btn = QPushButton("🗑 Remove Column")
         add_sig_btn.clicked.connect(self._add_signal_row)
         rem_sig_btn.clicked.connect(self._remove_signal_row)
+        add_col_btn.clicked.connect(self._add_extra_column)
+        rem_col_btn.clicked.connect(self._remove_extra_column)
+        add_col_btn.setToolTip("Add a custom description/comment column to the right of the table")
+        rem_col_btn.setToolTip("Remove a custom description/comment column")
         sig_btn_lay.addWidget(add_sig_btn)
         sig_btn_lay.addWidget(rem_sig_btn)
+        sig_btn_lay.addSpacing(16)
+        sig_btn_lay.addWidget(add_col_btn)
+        sig_btn_lay.addWidget(rem_col_btn)
         sig_btn_lay.addStretch()
         right_lay.addLayout(sig_btn_lay)
         
@@ -5483,86 +6220,192 @@ class SignalCompositionConfigDialog(QDialog):
         template_lay.addStretch()
         lay.addLayout(template_lay)
         
-        # Dialog buttons
+        # Dialog buttons – OK, Apply (save without closing), Cancel
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                              QDialogButtonBox.StandardButton.Apply |
                               QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self._on_accept)
+        bb.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self._on_apply)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
         
         self.setLayout(lay)
-        self._populate_list()
-    
-    def _populate_list(self):
-        """Populate the list of compositions."""
-        self.comp_list.clear()
-        for comp in self._compositions:
-            item = QListWidgetItem(comp["title"])
-            item.setData(Qt.ItemDataRole.UserRole, comp["id"])
-            self.comp_list.addItem(item)
+        self._populate_tree()
+
+    def _populate_tree(self):
+        """Populate the tree of typicals grouped by category."""
+        # Disconnect rowsInserted for the duration of this programmatic rebuild.
+        # rowsInserted fires for every item inserted, which would otherwise schedule
+        # a _sync_categories_from_tree timer after each item.  Because the timer fires
+        # *after* this method returns (next event-loop iteration), the re-entrancy flag
+        # alone cannot break the resulting timer chain.  Disconnecting the signal means
+        # only genuine user drag-drop operations trigger the sync, not our own rebuilds.
+        try:
+            self.comp_tree.model().rowsInserted.disconnect(self._schedule_tree_sync)
+        except RuntimeError:
+            pass  # already disconnected; safe to ignore
+        try:
+            self.comp_tree.setUpdatesEnabled(False)
+            self.comp_tree.clear()
+            # Group by category
+            groups: dict[str, list] = {}
+            for comp in self._compositions:
+                cat = comp.get("category", "").strip() or "No group assigned"
+                groups.setdefault(cat, []).append(comp)
+
+            # Also include pending (empty) categories created with "Add Category"
+            for pending in getattr(self, "_pending_new_categories", set()):
+                if pending not in groups:
+                    groups[pending] = []
+
+            # Sort: "No group assigned" first, then alphabetical
+            sorted_cats = sorted(groups.keys(),
+                                 key=lambda c: ("" if c == "No group assigned" else c.lower()))
+            for cat in sorted_cats:
+                cat_item = QTreeWidgetItem(self.comp_tree, [cat])
+                cat_item.setData(0, Qt.ItemDataRole.UserRole, None)  # not a composition
+                font = cat_item.font(0)
+                font.setBold(True)
+                cat_item.setFont(0, font)
+                # Make category items selectable (for rename/delete) and droppable
+                # so that typicals can be dragged onto them.
+                cat_item.setFlags(
+                    Qt.ItemFlag.ItemIsEnabled
+                    | Qt.ItemFlag.ItemIsSelectable
+                    | Qt.ItemFlag.ItemIsDropEnabled)
+                for comp in groups[cat]:
+                    child = QTreeWidgetItem(cat_item, [comp["title"]])
+                    child.setData(0, Qt.ItemDataRole.UserRole, comp["id"])
+                    # Leaf items must be draggable so they can be moved between categories.
+                    child.setFlags(
+                        Qt.ItemFlag.ItemIsEnabled
+                        | Qt.ItemFlag.ItemIsSelectable
+                        | Qt.ItemFlag.ItemIsDragEnabled)
+                cat_item.setExpanded(True)
+        finally:
+            self.comp_tree.setUpdatesEnabled(True)
+            self.comp_tree.model().rowsInserted.connect(self._schedule_tree_sync)
     
     def _on_comp_selected(self):
-        """When user selects a composition from the list."""
-        items = self.comp_list.selectedItems()
+        """When user selects a typical from the tree."""
+        items = self.comp_tree.selectedItems()
         if not items:
             self._clear_form()
             return
-        
-        comp_id = items[0].data(Qt.ItemDataRole.UserRole)
+
+        comp_id = items[0].data(0, Qt.ItemDataRole.UserRole)
+        if comp_id is None:
+            # Category header selected — ignore
+            return
+
         comp = next((c for c in self._compositions if c["id"] == comp_id), None)
-        
+
         if comp:
             self._current_comp_id = comp_id
+            self.cat_edit.setText(comp.get("category", ""))
             self.title_edit.setText(comp["title"])
-            self.desc_edit.setPlainText(comp["description"])
+            # Populate description fields
+            desc_lines = [dl for dl in comp["description"].split("\n") if dl] if comp["description"] else []
+            self._reset_desc_fields()
+            if desc_lines:
+                self._desc_fields[0].setText(desc_lines[0])
+                for dl in desc_lines[1:]:
+                    self._add_desc_field(dl)
+            self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
+            self.cm_table.item(0, 0).setText(comp.get("control_module", "NA") or "NA")
+            self.cm_table.item(0, 1).setText("CM")  # always fixed
+            self.cm_table.item(0, 2).setText(comp.get("cm_description", "NA") or "NA")
+            self.fd_table.item(0, 0).setText(comp.get("field_device", "NA") or "NA")
+            self.fd_table.item(0, 1).setText(comp.get("fd_type", "NA") or "NA")
+            self.fd_table.item(0, 2).setText(comp.get("fd_description", "NA") or "NA")
+            # Reset to fixed columns then restore any extra columns saved with this composition
+            self.signals_table.blockSignals(True)
+            self.signals_table.setColumnCount(self._FIXED_COL_COUNT)
+            self.signals_table.setRowCount(0)
+            self.signals_table.blockSignals(False)
+            for header in comp.get("extra_column_headers", []):
+                self._add_extra_column(header)
             self._populate_signals_table(comp["signals"])
             self._update_composition_display()
         else:
             self._clear_form()
     
     def _clear_form(self):
-        """Clear all form fields."""
+        """Clear all form fields and reset the signals table to fixed columns only."""
         self._current_comp_id = None
+        self.cat_edit.clear()
         self.title_edit.clear()
-        self.desc_edit.clear()
+        self._reset_desc_fields()
+        self.cm_table.item(0, 0).setText("NA")
+        self.cm_table.item(0, 1).setText("CM")  # always fixed
+        self.cm_table.item(0, 2).setText("NA")
+        self.fd_table.item(0, 0).setText("NA")
+        self.fd_table.item(0, 1).setText("NA")
+        self.fd_table.item(0, 2).setText("NA")
+        self.signals_table.blockSignals(True)
+        self.signals_table.setColumnCount(self._FIXED_COL_COUNT)
         self.signals_table.setRowCount(0)
+        self.signals_table.blockSignals(False)
         self.composition_display.setText("")
     
     def _populate_signals_table(self, signals: list[dict]):
-        """Fill the signals table with 5 columns."""
-        self.signals_table.setRowCount(0)
-        for sig in signals:
-            r = self.signals_table.rowCount()
-            self.signals_table.insertRow(r)
-            
-            # Signal Name
-            self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-            # Signal Type
-            self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
-            # Signal Description
-            self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
-            # Count
-            count_item = QTableWidgetItem(str(sig.get("count", 1)))
-            self.signals_table.setItem(r, 3, count_item)
-            # Resulting Signal (read-only, calculated)
-            resulting = self._calculate_resulting_signal(sig["signal_type"], sig.get("count", 1))
-            result_item = QTableWidgetItem(resulting)
-            result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.signals_table.setItem(r, 4, result_item)
-    
+        """Fill the signals table (fixed columns + any extra columns already set up)."""
+        self.signals_table.blockSignals(True)
+        try:
+            self.signals_table.setRowCount(0)
+            extra_count = self.signals_table.columnCount() - self._FIXED_COL_COUNT
+            for sig in signals:
+                r = self.signals_table.rowCount()
+                self.signals_table.insertRow(r)
+
+                self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
+                cb = self._make_signal_type_combo(sig["signal_type"])
+                cb.currentTextChanged.connect(
+                    lambda _txt, c=cb: self._update_resulting_signal_for_combo(c))
+                self.signals_table.setCellWidget(r, 1, cb)
+                self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
+                count_item = QTableWidgetItem(str(sig.get("count", 1)))
+                self.signals_table.setItem(r, 3, count_item)
+                self.signals_table.setItem(r, 4, QTableWidgetItem(sig.get("prefix") or "NA"))
+                self.signals_table.setItem(r, 5, QTableWidgetItem(sig.get("suffix") or "NA"))
+                resulting = self._calculate_resulting_signal(sig["signal_type"], sig.get("count", 1))
+                result_item = QTableWidgetItem(resulting)
+                result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.signals_table.setItem(r, 6, result_item)
+                # Extra columns
+                extra_values = sig.get("extra_column_values", [])
+                for ec in range(extra_count):
+                    val = extra_values[ec] if ec < len(extra_values) else ""
+                    self.signals_table.setItem(
+                        r, self._FIXED_COL_COUNT + ec, QTableWidgetItem(val))
+        finally:
+            self.signals_table.blockSignals(False)
+        self._update_composition_display()
+
     def _add_signal_row(self):
-        """Add an empty signal row."""
+        """Add an empty signal row (fills all fixed and any extra columns)."""
         r = self.signals_table.rowCount()
         self.signals_table.insertRow(r)
-        
-        for col in range(4):  # First 4 columns are editable
-            self.signals_table.setItem(r, col, QTableWidgetItem(""))
-        
-        # Add read-only resulting signal cell
-        result_item = QTableWidgetItem("")
-        result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        self.signals_table.setItem(r, 4, result_item)
-    
+        self.signals_table.blockSignals(True)
+        try:
+            self.signals_table.setItem(r, 0, QTableWidgetItem(""))
+            cb = self._make_signal_type_combo()
+            cb.currentTextChanged.connect(
+                lambda _txt, c=cb: self._update_resulting_signal_for_combo(c))
+            self.signals_table.setCellWidget(r, 1, cb)
+            self.signals_table.setItem(r, 2, QTableWidgetItem(""))
+            self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
+            self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
+            self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
+            result_item = QTableWidgetItem(cb.currentText())
+            result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.signals_table.setItem(r, 6, result_item)
+            # Fill any extra columns with empty text
+            for ec in range(self.signals_table.columnCount() - self._FIXED_COL_COUNT):
+                self.signals_table.setItem(r, self._FIXED_COL_COUNT + ec, QTableWidgetItem(""))
+        finally:
+            self.signals_table.blockSignals(False)
+
     def _remove_signal_row(self):
         """Remove the selected signal row."""
         r = self.signals_table.currentRow()
@@ -5575,86 +6418,353 @@ class SignalCompositionConfigDialog(QDialog):
         if count <= 1:
             return signal_type
         return f"{count}{signal_type}"
-    
-    def _update_resulting_signal(self, item: QTableWidgetItem):
-        """Update resulting signal when signal type or count changes."""
-        row = item.row()
-        
-        # Only update if signal_type (col 1) or count (col 3) changed
-        if item.column() in (1, 3):
-            sig_type_item = self.signals_table.item(row, 1)
-            count_item = self.signals_table.item(row, 3)
-            
-            sig_type = (sig_type_item.text() if sig_type_item else "").strip()
-            count_str = (count_item.text() if count_item else "1").strip()
-            
-            try:
-                count = int(count_str) if count_str else 1
-            except ValueError:
-                count = 1
-            
-            resulting = self._calculate_resulting_signal(sig_type, count)
-            result_item = self.signals_table.item(row, 4)
-            if result_item:
-                result_item.setText(resulting)
-        
+
+    def _make_signal_type_combo(self, current: str = "") -> "QComboBox":
+        """Return a QComboBox pre-loaded with the 8 allowed IO signal types."""
+        cb = QComboBox()
+        cb.addItems(_SIGNAL_IO_TYPES)
+        idx = cb.findText(current.strip())
+        if idx >= 0:
+            cb.setCurrentIndex(idx)
+        return cb
+
+    def _get_row_signal_type(self, row: int) -> str:
+        """Return the signal type for the given row (combo widget or item text)."""
+        widget = self.signals_table.cellWidget(row, 1)
+        if isinstance(widget, QComboBox):
+            return widget.currentText()
+        item = self.signals_table.item(row, 1)
+        return (item.text() if item else "").strip()
+
+    def _update_resulting_signal_for_combo(self, combo: "QComboBox"):
+        """Find the current row of *combo* and recompute its Resulting Signal cell."""
+        for r in range(self.signals_table.rowCount()):
+            if self.signals_table.cellWidget(r, 1) is combo:
+                self._update_resulting_signal_for_row(r)
+                return
+
+    def _update_resulting_signal_for_row(self, row: int):
+        """Recompute the Resulting Signal cell for *row*."""
+        sig_type  = self._get_row_signal_type(row)
+        count_item = self.signals_table.item(row, 3)
+        count_str  = (count_item.text() if count_item else "1").strip()
+        try:
+            count = int(count_str) if count_str else 1
+        except ValueError:
+            count = 1
+        resulting   = self._calculate_resulting_signal(sig_type, count)
+        result_item = self.signals_table.item(row, 6)
+        if result_item:
+            result_item.setText(resulting)
         self._update_composition_display()
-    
+
+    def _update_resulting_signal(self, item: QTableWidgetItem):
+        """Update resulting signal when count (col 3) changes."""
+        if item.column() == 3:
+            self._update_resulting_signal_for_row(item.row())
+        else:
+            self._update_composition_display()
+
     def _update_composition_display(self):
         """Update the composition display (e.g., "2HDI 1HDO")."""
-        # Count signals by type
-        signal_counts = {}
+        signal_counts: dict[str, int] = {}
         for r in range(self.signals_table.rowCount()):
-            sig_type_item = self.signals_table.item(r, 1)
+            sig_type  = self._get_row_signal_type(r)
             count_item = self.signals_table.item(r, 3)
-            
-            if sig_type_item is None:
-                continue
-            
-            sig_type = (sig_type_item.text() or "").strip()
-            count_str = (count_item.text() if count_item else "1").strip()
-            
+            count_str  = (count_item.text() if count_item else "1").strip()
             if sig_type:
                 try:
                     count = int(count_str) if count_str else 1
                 except ValueError:
                     count = 1
-                
                 signal_counts[sig_type] = signal_counts.get(sig_type, 0) + count
-        
-        # Build composition string
-        parts = []
-        for sig_type in sorted(signal_counts.keys()):
-            count = signal_counts[sig_type]
-            parts.append(f"{count}{sig_type}")
-        
-        composition = " ".join(parts) if parts else ""
-        self.composition_display.setText(composition)
-    
+
+        parts = [f"{signal_counts[t]}{t}" for t in sorted(signal_counts)]
+        self.composition_display.setText(" ".join(parts))
+
     def _new_composition(self):
         """Create a new blank composition."""
         self._clear_form()
         self.title_edit.setFocus()
     
     def _delete_composition(self):
-        """Delete the selected composition."""
-        items = self.comp_list.selectedItems()
-        if not items:
-            QMessageBox.warning(self, "No Selection", "Please select a composition to delete.")
+        """Delete the selected typical."""
+        items = self.comp_tree.selectedItems()
+        if not items or items[0].data(0, Qt.ItemDataRole.UserRole) is None:
+            QMessageBox.warning(self, "No Selection", "Please select a typical to delete.")
             return
-        
-        comp_name = items[0].text()
+
+        comp_name = items[0].text(0)
         ans = QMessageBox.question(
-            self, "Delete Composition",
+            self, "Delete Typical",
             f"Delete '{comp_name}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        
+
         if ans == QMessageBox.StandardButton.Yes:
-            comp_id = items[0].data(Qt.ItemDataRole.UserRole)
+            comp_id = items[0].data(0, Qt.ItemDataRole.UserRole)
+            db_delete_signal_composition(comp_id)
             self._compositions = [c for c in self._compositions if c["id"] != comp_id]
-            self._populate_list()
+            self._populate_tree()
             self._clear_form()
-    
+
+    # ── Category management ───────────────────────────────────────────────────
+    def _selected_category(self) -> str | None:
+        """Return the category name of the currently selected tree item, or None."""
+        items = self.comp_tree.selectedItems()
+        if not items:
+            return None
+        item = items[0]
+        # If it's a leaf (typical), use its parent's text
+        if item.data(0, Qt.ItemDataRole.UserRole) is not None:
+            parent = item.parent()
+            if parent:
+                name = parent.text(0)
+                return "" if name == "No group assigned" else name
+            return None
+        # It's a category header
+        name = item.text(0)
+        return "" if name == "No group assigned" else name
+
+    def _all_category_names(self) -> list[str]:
+        """Return sorted list of all category names currently in the tree."""
+        cats = set()
+        for comp in self._compositions:
+            cats.add(comp.get("category", "").strip())
+        return sorted(cats)
+
+    def _add_category(self):
+        name, ok = QInputDialog.getText(
+            self, "Add Category", "New category name:")
+        if not ok:
+            return
+        name = name.strip()
+        if not name:
+            QMessageBox.warning(self, "Invalid Name", "Category name cannot be empty.")
+            return
+        if name in self._all_category_names():
+            QMessageBox.information(self, "Exists",
+                                    f"Category '{name}' already exists.")
+            return
+        # Add a placeholder typical to anchor the category, OR just rebuild tree
+        # with no typicals — we store category as a text field on compositions.
+        # Easiest: just refresh; user can create a new typical and assign this cat.
+        # To show the empty category we need a sentinel — rebuild tree with it.
+        self._pending_new_categories = getattr(self, "_pending_new_categories", set())
+        self._pending_new_categories.add(name)
+        self._populate_tree()
+        # Pre-fill Category field so the next new typical gets this category
+        self.cat_edit.setText(name)
+
+    def _rename_category(self):
+        old_name = self._selected_category()
+        if old_name is None:
+            QMessageBox.warning(self, "No Selection",
+                                "Please click a category header to rename.")
+            return
+        display = old_name if old_name else "No group assigned"
+        new_name, ok = QInputDialog.getText(
+            self, "Rename Category", f"Rename '{display}' to:",
+            text=old_name)
+        if not ok:
+            return
+        new_name = new_name.strip()
+        if not new_name or new_name == old_name:
+            return
+        # Update all compositions in this category
+        for comp in self._compositions:
+            if comp.get("category", "").strip() == old_name:
+                comp["category"] = new_name
+        # Update cat_edit if it currently shows the old name
+        if self.cat_edit.text().strip() == old_name:
+            self.cat_edit.setText(new_name)
+        self._populate_tree()
+
+    def _delete_category(self):
+        old_name = self._selected_category()
+        if old_name is None:
+            QMessageBox.warning(self, "No Selection",
+                                "Please click a category header to delete.")
+            return
+        display = old_name if old_name else "No group assigned"
+        members = [c for c in self._compositions
+                   if c.get("category", "").strip() == old_name]
+        if members:
+            ans = QMessageBox.question(
+                self, "Delete Category",
+                f"Category '{display}' has {len(members)} typical(s).\n"
+                "Move them to 'No group assigned' and delete the category?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ans != QMessageBox.StandardButton.Yes:
+                return
+            for comp in members:
+                comp["category"] = ""
+        else:
+            # Remove from pending set if present
+            pnc = getattr(self, "_pending_new_categories", set())
+            pnc.discard(old_name)
+        self._populate_tree()
+
+    def _schedule_tree_sync(self):
+        """
+        Schedule a category-sync for after the current drag-drop operation
+        completes.  rowsInserted fires before Qt removes the item from its
+        original position (InternalMove), so deferring to the next event-loop
+        iteration guarantees the tree is in its final state.
+        """
+        QTimer.singleShot(0, self._sync_categories_from_tree)
+
+    def _sync_categories_from_tree(self):
+        """
+        Walk every category item in the tree and update each composition's
+        category field to match where it now lives.  Then rebuild the tree so
+        that all items carry the correct drag-enable flags (Qt's InternalMove
+        clones items without preserving custom flags).
+        """
+        root = self.comp_tree.invisibleRootItem()
+        # Preserve all categories currently visible in the tree (even those that
+        # become empty after a typical is dragged out of them) so that a move
+        # operation does not silently delete the source category.
+        pnc = getattr(self, "_pending_new_categories", set())
+        for ci in range(root.childCount()):
+            cat_label = root.child(ci).text(0)
+            if cat_label != "No group assigned":
+                pnc.add(cat_label)
+        self._pending_new_categories = pnc
+
+        for ci in range(root.childCount()):
+            cat_item = root.child(ci)
+            cat_label = cat_item.text(0)
+            cat_value = "" if cat_label == "No group assigned" else cat_label
+            for ti in range(cat_item.childCount()):
+                comp_item = cat_item.child(ti)
+                comp_id = comp_item.data(0, Qt.ItemDataRole.UserRole)
+                if comp_id is None:
+                    continue
+                for comp in self._compositions:
+                    if comp["id"] == comp_id:
+                        comp["category"] = cat_value
+                        break
+        # Rebuild tree to restore correct item flags for all items.
+        self._populate_tree()
+
+    def _add_desc_field(self, text: str = "") -> None:
+        """Add a description line field (max 5)."""
+        if len(self._desc_fields) >= 5:
+            return
+        row_lay = QHBoxLayout()
+        row_lay.setContentsMargins(0, 0, 0, 0)
+        edit = QLineEdit(text)
+        edit.setPlaceholderText(f"Description {len(self._desc_fields) + 1}…")
+        rm_btn = QPushButton("✕")
+        rm_btn.setFixedWidth(24)
+        rm_btn.setStyleSheet(
+            "QPushButton { background:#3A1010; color:#FF8A80; border:none;"
+            " border-radius:3px; font-size: 8pt; }"
+            "QPushButton:hover { background:#5A1A1A; }")
+        rm_btn.clicked.connect(lambda: self._remove_desc_field(row_lay, edit))
+        row_lay.addWidget(edit)
+        row_lay.addWidget(rm_btn)
+        self._desc_layout.addLayout(row_lay)
+        self._desc_fields.append(edit)
+        self._desc_buttons.append(rm_btn)
+        # Show remove buttons on all fields only when there are 2 or more
+        show = len(self._desc_fields) > 1
+        for btn in self._desc_buttons:
+            btn.setVisible(show)
+        if hasattr(self, '_add_desc_btn'):
+            self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
+
+    def _remove_desc_field(self, row_lay: QHBoxLayout, edit: QLineEdit) -> None:
+        """Remove a description line field (keep at least one)."""
+        if len(self._desc_fields) <= 1:
+            return
+        idx = self._desc_fields.index(edit)
+        self._desc_fields.remove(edit)
+        self._desc_buttons.pop(idx)
+        while row_lay.count():
+            item = row_lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._desc_layout.removeItem(row_lay)
+        for i, e in enumerate(self._desc_fields):
+            e.setPlaceholderText(f"Description {i + 1}…")
+        # Hide remove buttons if only one field remains
+        show = len(self._desc_fields) > 1
+        for btn in self._desc_buttons:
+            btn.setVisible(show)
+        if hasattr(self, '_add_desc_btn'):
+            self._add_desc_btn.setEnabled(len(self._desc_fields) < 5)
+
+    def _reset_desc_fields(self) -> None:
+        """Completely clear and rebuild the description field area (one empty field)."""
+        # Remove every row-layout and its child widgets from desc_layout
+        while self._desc_layout.count():
+            layout_item = self._desc_layout.takeAt(0)
+            sub_lay = layout_item.layout()
+            if sub_lay:
+                while sub_lay.count():
+                    widget_item = sub_lay.takeAt(0)
+                    if widget_item.widget():
+                        widget_item.widget().deleteLater()
+        self._desc_fields = []
+        self._desc_buttons = []
+        if hasattr(self, '_add_desc_btn'):
+            self._add_desc_btn.setEnabled(True)
+        self._add_desc_field()  # always keep at least one slot
+
+    def _add_extra_column(self, header: str = "") -> None:
+        """Add a user-defined extra column to the right of the signals table.
+
+        If *header* is empty the user is prompted for a column name.
+        Existing rows automatically get an empty cell in the new column.
+        """
+        if not header:
+            header, ok = QInputDialog.getText(
+                self, "Add Column",
+                "Enter column header (e.g., 'DI Comment', 'IO Remark'):")
+            if not ok or not header.strip():
+                return
+            header = header.strip()
+        col = self.signals_table.columnCount()
+        self.signals_table.setColumnCount(col + 1)
+        self.signals_table.setHorizontalHeaderItem(col, QTableWidgetItem(header))
+        self.signals_table.horizontalHeader().setSectionResizeMode(
+            col, QHeaderView.ResizeMode.Stretch)
+        # Fill existing rows with empty text
+        for r in range(self.signals_table.rowCount()):
+            self.signals_table.setItem(r, col, QTableWidgetItem(""))
+
+    def _remove_extra_column(self) -> None:
+        """Remove a user-defined extra column from the signals table.
+
+        If more than one extra column exists the user is prompted to choose which to remove.
+        """
+        extra_count = self.signals_table.columnCount() - self._FIXED_COL_COUNT
+        if extra_count <= 0:
+            QMessageBox.information(
+                self, "No Extra Columns",
+                "There are no extra columns to remove.\n"
+                "Only the built-in fixed columns are present.")
+            return
+
+        # Collect extra column header names
+        headers = []
+        for c in range(self._FIXED_COL_COUNT, self.signals_table.columnCount()):
+            item = self.signals_table.horizontalHeaderItem(c)
+            headers.append(item.text() if item else f"Column {c - self._FIXED_COL_COUNT + 1}")
+
+        if extra_count == 1:
+            col_to_remove = self._FIXED_COL_COUNT
+        else:
+            choice, ok = QInputDialog.getItem(
+                self, "Remove Column",
+                "Select the column to remove:", headers, 0, False)
+            if not ok:
+                return
+            col_to_remove = self._FIXED_COL_COUNT + headers.index(choice)
+
+        self.signals_table.removeColumn(col_to_remove)
+
     def _use_template(self):
         """Load a template and use it as basis for new composition."""
         template_dlg = SignalCompositionTemplateDialog(self)
@@ -5691,29 +6801,55 @@ class SignalCompositionConfigDialog(QDialog):
             
             self._clear_form()
             self.title_edit.setText(new_title.strip())
-            self.desc_edit.setPlainText(template["description"])
-            
+            self._desc_fields[0].setText(template.get("description", ""))
+
             # Populate signals from template
-            self.signals_table.setRowCount(0)
-            for sig in template["signals"]:
-                r = self.signals_table.rowCount()
-                self.signals_table.insertRow(r)
-                
-                self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
-                self.signals_table.setItem(r, 1, QTableWidgetItem(sig["signal_type"]))
-                self.signals_table.setItem(r, 2, QTableWidgetItem(sig.get("signal_description", "")))
-                self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
-                
-                resulting = self._calculate_resulting_signal(sig["signal_type"], 1)
-                result_item = QTableWidgetItem(resulting)
-                result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.signals_table.setItem(r, 4, result_item)
-            
+            self.signals_table.blockSignals(True)
+            try:
+                self.signals_table.setRowCount(0)
+                for sig in template["signals"]:
+                    r = self.signals_table.rowCount()
+                    self.signals_table.insertRow(r)
+
+                    self.signals_table.setItem(r, 0, QTableWidgetItem(sig["signal_name"]))
+                    sig_type_val = sig.get("signal_type", "") or _SIGNAL_IO_TYPES[0]
+                    cb = self._make_signal_type_combo(sig_type_val)
+                    cb.currentTextChanged.connect(
+                        lambda _txt, c=cb: self._update_resulting_signal_for_combo(c))
+                    self.signals_table.setCellWidget(r, 1, cb)
+                    sig_desc = sig.get("signal_description", "") or "NA"
+                    self.signals_table.setItem(r, 2, QTableWidgetItem(sig_desc))
+                    self.signals_table.setItem(r, 3, QTableWidgetItem("1"))
+                    self.signals_table.setItem(r, 4, QTableWidgetItem("NA"))
+                    self.signals_table.setItem(r, 5, QTableWidgetItem("NA"))
+
+                    resulting = self._calculate_resulting_signal(cb.currentText(), 1)
+                    result_item = QTableWidgetItem(resulting)
+                    result_item.setFlags(result_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    self.signals_table.setItem(r, 6, result_item)
+            finally:
+                self.signals_table.blockSignals(False)
+
             self._current_comp_id = None  # Mark as new composition
             self._update_composition_display()
-    
+
     def _on_accept(self):
-        """Validate and save changes."""
+        """Validate, save changes and close the dialog."""
+        if self._do_save():
+            self.accept()
+
+    def _on_apply(self):
+        """Validate and save changes without closing the dialog."""
+        if self._do_save():
+            self._compositions = db_load_compositions_by_owner(self._owner_id)
+            self._populate_tree()
+            QMessageBox.information(self, "Saved", "Changes saved successfully.")
+
+    def _do_save(self) -> bool:
+        """
+        Validate and persist all compositions to the database.
+        Returns True on success, False if validation or a DB error occurred.
+        """
         # Save current composition if one is being edited
         if self._current_comp_id is not None:
             self._save_current_composition()
@@ -5727,21 +6863,66 @@ class SignalCompositionConfigDialog(QDialog):
                 QMessageBox.warning(
                     self, "Validation Error",
                     "All compositions must have a title.")
-                return
-            
+                return False
+
+            if not comp.get("control_module", "").strip():
+                QMessageBox.warning(
+                    self, "Validation Error",
+                    f"Composition '{comp['title']}': Control Module Name is mandatory. "
+                    "Enter a value or use NA.")
+                return False
+
+            if not comp.get("field_device", "").strip():
+                QMessageBox.warning(
+                    self, "Validation Error",
+                    f"Composition '{comp['title']}': Field Device Name is mandatory. "
+                    "Enter a value or use NA.")
+                return False
+
             if not comp["signals"]:
                 QMessageBox.warning(
                     self, "Validation Error",
                     f"Composition '{comp['title']}' must have at least one signal.")
-                return
-            
-            # Check mandatory fields in each signal
-            for sig in comp["signals"]:
-                if not sig.get("signal_name") or not sig.get("signal_type") or not sig.get("signal_description"):
-                    QMessageBox.warning(
-                        self, "Validation Error",
-                        f"In composition '{comp['title']}': Signal Name, Type, and Description are mandatory.")
-                    return
+                return False
+
+            # Apply strict per-signal validation only to the composition being
+            # created or actively edited.  Pre-existing compositions loaded from
+            # the database may have been saved before the description/prefix/suffix
+            # requirements were introduced, so re-validating them here would
+            # incorrectly block saving a new, fully-filled composition.
+            is_current_comp = (
+                comp.get("id") is None
+                or comp.get("id") == self._current_comp_id
+            )
+            if is_current_comp:
+                for sig in comp["signals"]:
+                    if not sig.get("signal_name"):
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Signal Name is mandatory.")
+                        return False
+                    if not sig.get("signal_type"):
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Signal Type is mandatory.")
+                        return False
+                    if not sig.get("signal_description"):
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Signal Description is mandatory.")
+                        return False
+                    if not sig.get("prefix", "").strip():
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Prefix is mandatory per signal. "
+                            "Enter a value or use NA.")
+                        return False
+                    if not sig.get("suffix", "").strip():
+                        QMessageBox.warning(
+                            self, "Validation Error",
+                            f"In composition '{comp['title']}': Suffix is mandatory per signal. "
+                            "Enter a value or use NA.")
+                        return False
         
         # Save to database
         for comp in self._compositions:
@@ -5751,7 +6932,15 @@ class SignalCompositionConfigDialog(QDialog):
                     comp["id"] = db_save_signal_composition(
                         title=comp["title"],
                         description=comp["description"],
-                        signals=comp["signals"]
+                        signals=comp["signals"],
+                        control_module=comp.get("control_module", "NA"),
+                        field_device=comp.get("field_device", "NA"),
+                        extra_column_headers=comp.get("extra_column_headers", []),
+                        cm_type=comp.get("cm_type", "NA"),
+                        cm_description=comp.get("cm_description", "NA"),
+                        fd_type=comp.get("fd_type", "NA"),
+                        fd_description=comp.get("fd_description", "NA"),
+                        category=comp.get("category", "")
                     )
                     # Assign to owner
                     db_assign_composition_to_owner(comp["id"], self._owner_id)
@@ -5761,29 +6950,49 @@ class SignalCompositionConfigDialog(QDialog):
                         composition_id=comp["id"],
                         title=comp["title"],
                         description=comp["description"],
-                        signals=comp["signals"]
+                        signals=comp["signals"],
+                        control_module=comp.get("control_module", "NA"),
+                        field_device=comp.get("field_device", "NA"),
+                        extra_column_headers=comp.get("extra_column_headers", []),
+                        cm_type=comp.get("cm_type", "NA"),
+                        cm_description=comp.get("cm_description", "NA"),
+                        fd_type=comp.get("fd_type", "NA"),
+                        fd_description=comp.get("fd_description", "NA"),
+                        category=comp.get("category", "")
                     )
             except Exception as e:
                 QMessageBox.warning(self, "Error", str(e))
-                return
-        
-        self.accept()
+                return False
+
+        return True
         
     def _save_current_composition(self):
-        """Save the currently edited composition."""
+        """Save the currently edited composition into self._compositions."""
         title = self.title_edit.text().strip()
         if not title:
             return
         
-        # Collect signals with the new 5-column format
+        # Collect extra column headers from the table
+        extra_column_headers = []
+        for ec in range(self._FIXED_COL_COUNT, self.signals_table.columnCount()):
+            hdr_item = self.signals_table.horizontalHeaderItem(ec)
+            extra_column_headers.append(hdr_item.text() if hdr_item else "")
+        
+        # Collect signals (fixed fields + per-row extra column values)
         signals = []
         for r in range(self.signals_table.rowCount()):
             sig_name = (self.signals_table.item(r, 0) or QTableWidgetItem()).text().strip()
-            sig_type = (self.signals_table.item(r, 1) or QTableWidgetItem()).text().strip()
+            sig_type = self._get_row_signal_type(r)
             sig_desc = (self.signals_table.item(r, 2) or QTableWidgetItem()).text().strip()
             count_str = (self.signals_table.item(r, 3) or QTableWidgetItem()).text().strip()
+            prefix = (self.signals_table.item(r, 4) or QTableWidgetItem()).text().strip() or "NA"
+            suffix = (self.signals_table.item(r, 5) or QTableWidgetItem()).text().strip() or "NA"
+            extra_column_values = [
+                (self.signals_table.item(r, self._FIXED_COL_COUNT + ec) or QTableWidgetItem()).text().strip()
+                for ec in range(len(extra_column_headers))
+            ]
             
-            if sig_name and sig_type and sig_desc:
+            if sig_name and sig_type:
                 try:
                     count = int(count_str) if count_str else 1
                 except ValueError:
@@ -5792,8 +7001,11 @@ class SignalCompositionConfigDialog(QDialog):
                 signals.append({
                     "signal_name": sig_name,
                     "signal_type": sig_type,
-                    "signal_description": sig_desc,
-                    "count": count
+                    "signal_description": sig_desc,  # may be empty; validated separately
+                    "count": count,
+                    "prefix": prefix,
+                    "suffix": suffix,
+                    "extra_column_values": extra_column_values,
                 })
         
         if not signals:
@@ -5814,54 +7026,41 @@ class SignalCompositionConfigDialog(QDialog):
             comp_to_update = {
                 "id": None,  # New composition - no ID yet
                 "title": title,
+                "category": "",
                 "description": "",
+                "control_module": "NA",
+                "cm_type": "NA",
+                "cm_description": "NA",
+                "field_device": "NA",
+                "fd_type": "NA",
+                "fd_description": "NA",
+                "extra_column_headers": [],
                 "signals": []
             }
             self._compositions.append(comp_to_update)
         
         # Update the composition
         comp_to_update["title"] = title
-        comp_to_update["description"] = self.desc_edit.toPlainText().strip()
+        comp_to_update["category"] = self.cat_edit.text().strip()
+        description = "\n".join(
+            e.text().strip() for e in self._desc_fields if e.text().strip())
+        comp_to_update["description"] = description
+        comp_to_update["control_module"] = (self.cm_table.item(0, 0).text().strip() or "NA")
+        comp_to_update["cm_type"]        = "CM"  # always fixed
+        comp_to_update["cm_description"] = (self.cm_table.item(0, 2).text().strip() or "NA")
+        comp_to_update["field_device"]    = (self.fd_table.item(0, 0).text().strip() or "NA")
+        comp_to_update["fd_type"]        = (self.fd_table.item(0, 1).text().strip() or "NA")
+        comp_to_update["fd_description"] = (self.fd_table.item(0, 2).text().strip() or "NA")
+        comp_to_update["extra_column_headers"] = extra_column_headers
         comp_to_update["signals"] = signals
-        
-        self._current_comp_id = comp_to_update["id"]                
+
+        self._current_comp_id = comp_to_update["id"]
 # ---------------------------------------------------------------------------
 # ProjectMetadataDialog — create or edit a project
 # ---------------------------------------------------------------------------
 class ProjectMetadataDialog(QDialog):
     def __init__(self, project: dict | None = None, parent=None):
         super().__init__(parent)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QLineEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QPlainTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; }"
-            "QComboBox { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; }"
-            "QComboBox QAbstractItemView { background: #2B2B2B; color: #F0F0F0;"
-            " selection-background-color: #3D5A80; }"
-            "QTreeWidget { background: #252525; color: #F0F0F0;"
-            " alternate-background-color: #2B2B2B; }"
-            "QTreeWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QPushButton:pressed { background: #2A2A2A; }"
-            "QPushButton:disabled { color: #666666; background: #2B2B2B; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-            "QScrollBar:vertical { background: #2B2B2B; width: 10px; }"
-            "QScrollBar::handle:vertical { background: #555555; border-radius: 5px; }"
-        )
         self.setWindowTitle("New Project" if project is None else "Edit Project")
         self.setMinimumWidth(420)
 
@@ -5914,11 +7113,59 @@ class ProjectMetadataDialog(QDialog):
         }
 
 # ---------------------------------------------------------------------------
+# FileMetadataDialog — edit per-file Technical Drawing metadata
+# ---------------------------------------------------------------------------
+class FileMetadataDialog(QDialog):
+    """Dialog to set Technical Drawing Number and Description for a project file."""
+
+    def __init__(self, file_id: int, file_name: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"File Metadata — {file_name}")
+        self.setMinimumWidth(420)
+        self._file_id = file_id
+
+        meta = db_get_file_metadata(file_id)
+
+        # Default the drawing number to the PDF filename (without extension)
+        default_number = meta.get("drw_name", "") or os.path.splitext(file_name)[0]
+        self._name_edit   = QLineEdit(default_number)
+        self._number_edit = QLineEdit(meta.get("drw_number", ""))
+        self._name_edit.setPlaceholderText("e.g. DWG-001")
+        self._number_edit.setPlaceholderText("e.g. Cooling Water System P&ID")
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setVerticalSpacing(8)
+        form.addRow("<b>Technical Drawing Number:</b>", self._name_edit)
+        form.addRow("<b>Technical Drawing Description:</b>", self._number_edit)
+
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok |
+                              QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(self._on_accept)
+        bb.rejected.connect(self.reject)
+
+        lay = QVBoxLayout()
+        lay.setContentsMargins(14, 14, 14, 10)
+        lay.addLayout(form)
+        lay.addWidget(bb)
+        self.setLayout(lay)
+
+    def _on_accept(self):
+        db_save_file_metadata(
+            self._file_id,
+            self._name_edit.text().strip(),
+            self._number_edit.text().strip(),
+        )
+        self.accept()
+
+# ---------------------------------------------------------------------------
 # ProjectPanel — the sidebar tree widget
 # ---------------------------------------------------------------------------
 class ProjectPanel(QWidget):
     # Emitted when the user double-clicks a PDF node
     open_file_requested = Signal(str)
+    # Emitted when user picks "Export Project IO List" from project context menu
+    export_project_io_requested = Signal(int)  # project_id
 
     # Role used to store data on tree items
     _ROLE_KIND     = Qt.ItemDataRole.UserRole        # "project"|"file"|"unassigned_header"|"unassigned_file"
@@ -5931,12 +7178,21 @@ class ProjectPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setStyleSheet("background:#1E1E1E;")
+        self._theme = "dark"
         self._build_ui()
         self._validation_timer = QTimer(self)
         self._validation_timer.setSingleShot(True)
         self._validation_timer.timeout.connect(self._validate_files)
         self.refresh()
+
+    def set_theme(self, theme: str) -> None:
+        """Update the active theme and refresh tree colours."""
+        self._theme = theme
+        self.refresh()
+
+    def _file_text_color(self) -> QColor:
+        """Return the appropriate text colour for file items in the current theme."""
+        return QColor("#F0F0F0") if self._theme == "dark" else QColor("#1A1A1A")
 
     def _build_ui(self):
         # Toolbar buttons
@@ -5961,22 +7217,6 @@ class ProjectPanel(QWidget):
             QAbstractItemView.SelectionMode.SingleSelection)
         self._tree.setAnimated(True)
         self._tree.setIndentation(16)
-        self._tree.setStyleSheet("""
-            QTreeWidget {
-                border: none;
-                font-size: 9pt;
-                background: #252525;
-                color: #F0F0F0;
-            }
-            QTreeWidget::item { padding: 3px 2px; }
-            QTreeWidget::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QTreeWidget::item:hover {
-                background: #333333;
-            }
-        """)
 
         # Use NoDragDrop on the tree so Qt never auto-reparents items.
         # We start drags manually via a viewport event filter.
@@ -6343,7 +7583,7 @@ class ProjectPanel(QWidget):
                 f_item.setText(0, f"📄  {os.path.basename(path)}")
                 f_item.setData(0, self._ROLE_KIND, "unassigned_file")
                 f_item.setData(0, self._ROLE_PATH, path)
-                f_item.setForeground(0, QColor("#F0F0F0"))
+                f_item.setForeground(0, self._file_text_color())
                 f_item.setToolTip(0, path)
                 # Draggable but never shows a spurious expand arrow
                 f_item.setFlags(
@@ -6412,7 +7652,7 @@ class ProjectPanel(QWidget):
         item.setData(0, self._ROLE_MISSING, not exists)
         if exists:
             item.setText(0, f"📄  {name}")
-            item.setForeground(0, QColor("#F0F0F0"))
+            item.setForeground(0, self._file_text_color())
             item.setToolTip(0, path)
         else:
             item.setText(0, f"⚠️  {name}")
@@ -6435,30 +7675,6 @@ class ProjectPanel(QWidget):
         item = self._tree.itemAt(pos)
         global_pos = self._tree.viewport().mapToGlobal(pos)
         menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item {
-                background: transparent;
-                color: #F0F0F0;
-                padding: 5px 24px 5px 12px;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled {
-                color: #777777;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-        """)
 
         if item is None:
             # Clicked on empty space
@@ -6474,20 +7690,27 @@ class ProjectPanel(QWidget):
             act_add_file   = menu.addAction("📄   Add PDF file…")
             act_add_folder = menu.addAction("📁   Add folder…")
             menu.addSeparator()
+            act_export_io  = menu.addAction("📊   Export Project IO List…")
+            menu.addSeparator()
             act_del = menu.addAction("🗑   Delete project")
             act_edit.triggered.connect(lambda: self._on_edit_project(pid))
             act_add_file.triggered.connect(lambda: self._on_add_file(pid))
             act_add_folder.triggered.connect(lambda: self._on_add_folder(pid))
+            act_export_io.triggered.connect(lambda: self.export_project_io_requested.emit(pid))
             act_del.triggered.connect(lambda: self._on_delete_project(pid))
 
         elif item.data(0, self._ROLE_KIND) == "file":
             fid  = item.data(0, self._ROLE_ID)
             path = item.data(0, self._ROLE_PATH)
             missing = item.data(0, self._ROLE_MISSING)
+            fname = item.text(0)
             act_open = menu.addAction("📂   Open in new tab")
             if missing:
                 act_relink = menu.addAction("🔗   Re-link file…")
                 act_relink.triggered.connect(lambda: self._on_relink_file(fid, item))
+            menu.addSeparator()
+            act_meta = menu.addAction("📋   Edit file metadata…")
+            act_meta.triggered.connect(lambda: self._on_edit_file_metadata(fid, fname))
             menu.addSeparator()
             act_remove = menu.addAction("🗑   Remove from project")
             act_open.triggered.connect(lambda: self.open_file_requested.emit(path))
@@ -6708,6 +7931,10 @@ class ProjectPanel(QWidget):
         db_remove_project_file(file_id)
         self.refresh()
 
+    def _on_edit_file_metadata(self, file_id: int, file_name: str):
+        dlg = FileMetadataDialog(file_id, file_name, parent=self)
+        dlg.exec()
+
     def _on_relink_file(self, file_id: int, item: QTreeWidgetItem):
         path, _ = QFileDialog.getOpenFileName(
             self, "Re-link file — choose new location", "", "PDF Files (*.pdf)")
@@ -6750,23 +7977,6 @@ class MarkerInfoDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Marker Information")
         self.setMinimumWidth(500)
-        self.setStyleSheet(
-            "* { background-color: #1E1E1E; color: #F0F0F0; }"
-            "QDialog { background: #1E1E1E; }"
-            "QLabel { color: #F0F0F0; background: transparent; }"
-            "QTextEdit { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 3px; padding: 2px 4px; }"
-            "QTableWidget { background: #252525; color: #F0F0F0;"
-            " gridline-color: #3A3A3A; }"
-            "QTableWidget::item:selected { background: #3D5A80; color: #FFFFFF; }"
-            "QHeaderView::section { background: #2B2B2B; color: #F0F0F0;"
-            " border: 1px solid #3A3A3A; padding: 3px 6px; font-weight: bold; }"
-            "QPushButton { background: #3A3A3A; color: #F0F0F0;"
-            " border: 1px solid #555555; border-radius: 4px; padding: 4px 10px; }"
-            "QPushButton:hover { background: #4A4A4A; }"
-            "QDialogButtonBox QPushButton { min-width: 72px; }"
-        )
-        
         self._marker = marker
         self._build_ui()
     
@@ -6829,36 +8039,48 @@ class MarkerInfoDialog(QDialog):
     def _add_composition_info(self, lay: QVBoxLayout, marker: dict, composition: dict):
         """Add composition-specific information to the dialog."""
         
-        # ── Count and Configuration ──────────────────────────────────────
+        # ── Composition metadata ─────────────────────────────────────────
         lay.addWidget(QLabel("<b>Configuration:</b>"))
-        
+
         tag_parts = marker.get("tag_parts", {})
         count = tag_parts.get("count", 1)
-        prefix = tag_parts.get("prefix", "")
-        suffix = tag_parts.get("suffix", "")
-        middle_fields = tag_parts.get("middle_fields", [])
-        
-        config_table = QTableWidget(4, 2)
-        config_table.setColumnWidth(0, 120)
-        config_table.setColumnWidth(1, 200)
+
+        config_table = QTableWidget(7, 2)
+        config_table.setColumnWidth(0, 160)
+        config_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch)
         config_table.horizontalHeader().setVisible(False)
         config_table.verticalHeader().setVisible(False)
         config_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        
-        config_table.setItem(0, 0, QTableWidgetItem("Count:"))
+
+        config_table.setItem(0, 0, QTableWidgetItem("Count (multiplier):"))
         config_table.setItem(0, 1, QTableWidgetItem(str(count)))
-        
-        config_table.setItem(1, 0, QTableWidgetItem("Prefix:"))
-        config_table.setItem(1, 1, QTableWidgetItem(prefix if prefix else "(none)"))
-        
-        config_table.setItem(2, 0, QTableWidgetItem("Middle Fields:"))
-        middle_str = ", ".join(middle_fields) if middle_fields else "(none)"
-        config_table.setItem(2, 1, QTableWidgetItem(middle_str))
-        
-        config_table.setItem(3, 0, QTableWidgetItem("Suffix:"))
-        config_table.setItem(3, 1, QTableWidgetItem(suffix if suffix else "(none)"))
-        
-        config_table.setMaximumHeight(120)
+
+        config_table.setItem(1, 0, QTableWidgetItem("Control Module Name:"))
+        config_table.setItem(1, 1, QTableWidgetItem(
+            composition.get("control_module", "NA") or "NA"))
+
+        config_table.setItem(2, 0, QTableWidgetItem("Control Module Type:"))
+        config_table.setItem(2, 1, QTableWidgetItem(
+            composition.get("cm_type", "NA") or "NA"))
+
+        config_table.setItem(3, 0, QTableWidgetItem("Control Module Desc.:"))
+        config_table.setItem(3, 1, QTableWidgetItem(
+            composition.get("cm_description", "NA") or "NA"))
+
+        config_table.setItem(4, 0, QTableWidgetItem("Field Device Name:"))
+        config_table.setItem(4, 1, QTableWidgetItem(
+            composition.get("field_device", "NA") or "NA"))
+
+        config_table.setItem(5, 0, QTableWidgetItem("Field Device Type:"))
+        config_table.setItem(5, 1, QTableWidgetItem(
+            composition.get("fd_type", "NA") or "NA"))
+
+        config_table.setItem(6, 0, QTableWidgetItem("F Desc.:"))
+        config_table.setItem(6, 1, QTableWidgetItem(
+            composition.get("fd_description", "NA") or "NA"))
+
+        config_table.setMaximumHeight(200)
         lay.addWidget(config_table)
         
         lay.addWidget(self._divider())
@@ -6866,15 +8088,19 @@ class MarkerInfoDialog(QDialog):
         # ── Signals table ────────────────────────────────────────────────
         lay.addWidget(QLabel("<b>Signals in Composition:</b>"))
         
-        signals_table = QTableWidget(len(composition["signals"]), 3)
+        signals_table = QTableWidget(len(composition["signals"]), 5)
         signals_table.setHorizontalHeaderLabels(
-            ["Signal Name", "Signal Type", "Description"])
+            ["Signal Name", "Signal Type", "Description", "Prefix", "Suffix"])
         signals_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents)
         signals_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.ResizeMode.ResizeToContents)
         signals_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.ResizeMode.Stretch)
+        signals_table.horizontalHeader().setSectionResizeMode(
+            3, QHeaderView.ResizeMode.ResizeToContents)
+        signals_table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.ResizeToContents)
         signals_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         signals_table.verticalHeader().setVisible(False)
         
@@ -6883,6 +8109,10 @@ class MarkerInfoDialog(QDialog):
             signals_table.setItem(row, 1, QTableWidgetItem(sig.get("signal_type", "")))
             signals_table.setItem(row, 2, QTableWidgetItem(
                 sig.get("signal_description", "")))
+            signals_table.setItem(row, 3, QTableWidgetItem(
+                sig.get("prefix") or "NA"))
+            signals_table.setItem(row, 4, QTableWidgetItem(
+                sig.get("suffix") or "NA"))
         
         signals_table.setMaximumHeight(min(200, len(composition["signals"]) * 25 + 30))
         lay.addWidget(signals_table, stretch=1)
@@ -6924,198 +8154,23 @@ class MarkerInfoDialog(QDialog):
 class PDFViewer(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle(" Viewer")
+        self.setWindowTitle("Technical Drawing Viewer")
         self.resize(1280, 900)
 
-        # ── Global dark theme ────────────────────────────────────────────
-        self.setStyleSheet("""
-            QMainWindow, QWidget {
-                background: #1E1E1E;
-                color: #F0F0F0;
-            }
-            QMenuBar {
-                background: #2B2B2B;
-                color: #F0F0F0;
-            }
-            QMenuBar::item:selected {
-                background: #3A3A3A;
-                color: #FFFFFF;
-            }
-            QMenu {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QMenu::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QMenu::item:disabled {
-                color: #777777;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #444444;
-                margin: 3px 6px;
-            }
-            QTabWidget::pane {
-                background: #1E1E1E;
-                border: 1px solid #3A3A3A;
-            }
-            QTabBar::tab {
-                background: #2B2B2B;
-                color: #CCCCCC;
-                min-width: 140px;
-                padding: 4px 12px;
-                border: 1px solid #3A3A3A;
-                border-bottom: none;
-            }
-            QTabBar::tab:selected {
-                background: #1E1E1E;
-                color: #FFFFFF;
-                font-weight: bold;
-            }
-            QTabBar::tab:hover:!selected {
-                background: #353535;
-            }
-            QStatusBar {
-                background: #2B2B2B;
-                color: #CCCCCC;
-            }
-            QStatusBar QLabel {
-                color: #CCCCCC;
-            }
-            QDockWidget {
-                color: #F0F0F0;
-            }
-            QDockWidget::title {
-                background: #1F4E79;
-                color: #FFFFFF;
-                padding: 4px 8px;
-                font-weight: bold;
-            }
-            QScrollBar:vertical {
-                background: #2B2B2B;
-                width: 10px;
-            }
-            QScrollBar::handle:vertical {
-                background: #555555;
-                border-radius: 5px;
-            }
-            QScrollBar:horizontal {
-                background: #2B2B2B;
-                height: 10px;
-            }
-            QScrollBar::handle:horizontal {
-                background: #555555;
-                border-radius: 5px;
-            }
-            QPushButton {
-                background: #3A3A3A;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 4px 10px;
-            }
-            QPushButton:hover   { background: #4A4A4A; }
-            QPushButton:pressed { background: #2A2A2A; }
-            QPushButton:disabled { color: #666666; background: #2B2B2B; }
-            QLineEdit {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-                border-radius: 3px;
-                padding: 2px 4px;
-            }
-            QTextEdit, QPlainTextEdit {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-            QComboBox {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-                border-radius: 3px;
-                padding: 2px 4px;
-            }
-            QComboBox QAbstractItemView {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                selection-background-color: #3D5A80;
-                selection-color: #FFFFFF;
-            }
-            QTreeWidget {
-                background: #252525;
-                color: #F0F0F0;
-                border: none;
-                alternate-background-color: #2B2B2B;
-            }
-            QTreeWidget::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QTreeWidget::item:hover { background: #333333; }
-            QTableWidget {
-                background: #252525;
-                color: #F0F0F0;
-                gridline-color: #3A3A3A;
-                border: 1px solid #3A3A3A;
-            }
-            QTableWidget::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QHeaderView::section {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #3A3A3A;
-                padding: 3px 6px;
-                font-weight: bold;
-            }
-            QLabel {
-                color: #F0F0F0;
-                background: transparent;
-            }
-            QGroupBox {
-                color: #F0F0F0;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                margin-top: 8px;
-                padding-top: 8px;
-            }
-            QGroupBox::title {
-                color: #F0F0F0;
-                subcontrol-origin: margin;
-                left: 8px;
-            }
-            QDialog {
-                background: #1E1E1E;
-                color: #F0F0F0;
-            }
-            QListWidget {
-                background: #252525;
-                color: #F0F0F0;
-                border: 1px solid #3A3A3A;
-            }
-            QListWidget::item:selected {
-                background: #3D5A80;
-                color: #FFFFFF;
-            }
-            QCheckBox { color: #F0F0F0; }
-            QRadioButton { color: #F0F0F0; }
-            QToolTip {
-                background: #2B2B2B;
-                color: #F0F0F0;
-                border: 1px solid #555555;
-            }
-        """)
+        # Set the application / taskbar icon from the bundled logo
+        _icon_path = resource_path("icon.png")
+        if os.path.isfile(_icon_path):
+            self.setWindowIcon(QIcon(_icon_path))
+
+        # ── Resolve saved theme (applied after _build_ui so toolbar exists) ─
+        self._current_theme = db_load_theme()
 
         # Shared across all tabs — signal type list
         self._signal_types: list = db_load_signal_types()
 
         self._build_ui()
         self._connect_signals()
+        self._apply_theme(self._current_theme, _persist=False)
         self.act_configure_compositions.triggered.connect(self.open_signal_compositions_config)
         self._set_pdf_actions_enabled(False)
 
@@ -7138,7 +8193,6 @@ class PDFViewer(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction(self.act_save_fdf)
         file_menu.addAction(self.act_save_pdf)
-        file_menu.addAction(self.act_export_xlsx)
         file_menu.addAction(self.act_export_project_io)
         file_menu.addSeparator()
         file_menu.addAction(self.act_link_session)
@@ -7164,25 +8218,46 @@ class PDFViewer(QMainWindow):
         view_menu.addAction(self.act_prev_page)
         view_menu.addAction(self.act_next_page)
 
+        # ── Theme sub-menu ────────────────────────────────────────────────
+        theme_menu = view_menu.addMenu("🎨  &Theme")
+        self._theme_group = QActionGroup(self)
+        self._theme_group.setExclusive(True)
+        self.act_theme_dark   = QAction("🌑  &Dark",           self, checkable=True)
+        self.act_theme_light  = QAction("☀️   &Light",          self, checkable=True)
+        self.act_theme_system = QAction("🖥️   &System Default", self, checkable=True)
+        for act in (self.act_theme_dark, self.act_theme_light, self.act_theme_system):
+            self._theme_group.addAction(act)
+            theme_menu.addAction(act)
+        # Check the currently active theme
+        _theme_acts = {"dark": self.act_theme_dark,
+                       "light": self.act_theme_light,
+                       "system": self.act_theme_system}
+        _theme_acts.get(self._current_theme, self.act_theme_dark).setChecked(True)
+        self.act_theme_dark.triggered.connect(lambda: self._apply_theme("dark"))
+        self.act_theme_light.triggered.connect(lambda: self._apply_theme("light"))
+        self.act_theme_system.triggered.connect(lambda: self._apply_theme("system"))
+
         # Edit menu
         edit_menu = mb.addMenu("&Edit")
         self.act_undo          = QAction("&Undo", self, shortcut="Ctrl+Z")
         self.act_redo          = QAction("&Redo", self, shortcut="Ctrl+Y")
+        # Use platform undo/redo icons with emoji fallback
+        _undo_icon = QApplication.style().standardIcon(
+            QStyle.StandardPixmap.SP_ArrowBack)
+        _redo_icon = QApplication.style().standardIcon(
+            QStyle.StandardPixmap.SP_ArrowForward)
+        self.act_undo.setIcon(_undo_icon)
+        self.act_redo.setIcon(_redo_icon)
         self.act_configure     = QAction("&Configure Signal Types…",  self, shortcut="Ctrl+,")
         self.act_configure_compositions = QAction(
-            "🔧 Configure Signal &Compositions…", self, shortcut="Ctrl+Shift+,")
+            "🔧 Configure Signal &Typicals…", self, shortcut="Ctrl+Shift+,")
         self.act_config_export = QAction("Configure &Export Columns…", self)
-        self.act_export_signal_types = QAction("📤  Export Signal Types to Excel…", self)
-        self.act_import_signal_types = QAction("📥  Import Signal Types from XML/Excel…", self)
         self.act_undo.setEnabled(False)
         self.act_redo.setEnabled(False)
         edit_menu.addAction(self.act_undo)
         edit_menu.addAction(self.act_redo)
         edit_menu.addSeparator()
-        edit_menu.addAction(self.act_export_signal_types)
-        edit_menu.addAction(self.act_import_signal_types)
-        edit_menu.addAction(self.act_config_export)
-        edit_menu.addAction(self.act_configure_compositions)  # ← New line
+        edit_menu.addAction(self.act_configure_compositions)
 
         # Preferences menu
         pref_menu = mb.addMenu("&Preferences")
@@ -7193,49 +8268,21 @@ class PDFViewer(QMainWindow):
         pref_menu.addAction(self.act_mode_marker)
         pref_menu.addAction(self.act_mode_text)
 
+        # ── Help menu ─────────────────────────────────────────────────────
+        help_menu = mb.addMenu("&Help")
+        self.act_about = QAction("ℹ️  &About",        self)
+        self.act_help  = QAction("❓  &Help", self, shortcut="F1")
+        help_menu.addAction(self.act_about)
+        help_menu.addAction(self.act_help)
+        self.act_about.triggered.connect(self._show_about)
+        self.act_help.triggered.connect(self._show_help)
+
         # ── Quick-access toolbar ─────────────────────────────────────────
         tb = self.addToolBar("Quick Access")
         tb.setMovable(False)
         tb.setFloatable(False)
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        tb.setStyleSheet("""
-            QToolBar {
-                background: #252525;
-                border-bottom: 1px solid #3A3A3A;
-                padding: 2px 4px;
-                spacing: 2px;
-            }
-            QToolButton {
-                background: transparent;
-                color: #CCCCCC;
-                border: 1px solid transparent;
-                border-radius: 4px;
-                padding: 3px 8px;
-                font-size: 9pt;
-                min-width: 44px;
-            }
-            QToolButton:hover {
-                background: #3A3A3A;
-                border: 1px solid #555555;
-                color: #FFFFFF;
-            }
-            QToolButton:pressed {
-                background: #2A2A2A;
-            }
-            QToolButton:checked {
-                background: #1A3A5C;
-                border: 1px solid #3D5A80;
-                color: #7EC8F0;
-            }
-            QToolButton:disabled {
-                color: #555555;
-            }
-            QToolBar::separator {
-                background: #3A3A3A;
-                width: 1px;
-                margin: 4px 6px;
-            }
-        """)
+        self._toolbar = tb  # set early so _apply_theme can find it
 
         def _tb_action(emoji: str, label: str, action: QAction) -> QAction:
             """Set the action text to 'emoji\\nlabel' for the toolbar button."""
@@ -7254,14 +8301,12 @@ class PDFViewer(QMainWindow):
         tb.addAction(self.act_save_fdf)
         _tb_action("📑", "Save PDF",   self.act_save_pdf)
         tb.addAction(self.act_save_pdf)
-        _tb_action("📊", "Excel",      self.act_export_xlsx)
-        tb.addAction(self.act_export_xlsx)
         tb.addSeparator()
 
         # Group 3 — Edit
-        _tb_action("↩",  "Undo",       self.act_undo)
+        _tb_action("↩", "Undo", self.act_undo)
         tb.addAction(self.act_undo)
-        _tb_action("↪",  "Redo",       self.act_redo)
+        _tb_action("↪", "Redo", self.act_redo)
         tb.addAction(self.act_redo)
         tb.addSeparator()
 
@@ -7289,7 +8334,12 @@ class PDFViewer(QMainWindow):
         tb.addAction(self.act_mode_text)
         tb.addSeparator()
 
-        self._toolbar = tb
+        # Group 6 — Export / Config shortcuts
+        _tb_action("📊", "Export Excel",    self.act_export_xlsx)
+        tb.addAction(self.act_export_xlsx)
+        _tb_action("🔧", "Signal Typicals", self.act_configure_compositions)
+        tb.addAction(self.act_configure_compositions)
+        tb.addSeparator()
 
         # ── Tab widget ───────────────────────────────────────────────────
         self._tabs = QTabWidget()
@@ -7306,6 +8356,7 @@ class PDFViewer(QMainWindow):
 
         # ── Project panel dock ────────────────────────────────────────────
         self._project_panel = ProjectPanel()
+        self._project_panel.set_theme(self._current_theme)
         self._project_dock  = QDockWidget("Projects", self)
         self._project_dock.setWidget(self._project_panel)
         self._project_dock.setAllowedAreas(
@@ -7315,12 +8366,6 @@ class PDFViewer(QMainWindow):
         self._project_dock.setFeatures(
             QDockWidget.DockWidgetFeature.DockWidgetMovable |
             QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        self._project_dock.setStyleSheet("""
-            QDockWidget::title {
-                background:#1F4E79; color:white;
-                padding:4px 8px; font-weight:bold;
-            }
-        """)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea,
                            self._project_dock)
         self._project_dock.hide()
@@ -7339,6 +8384,81 @@ class PDFViewer(QMainWindow):
         self.statusBar().addPermanentWidget(self._version_label)
         self.statusBar().showMessage("Open a PDF to begin.")
 
+    # ── Theme ──────────────────────────────────────────────────────────────
+    def _apply_theme(self, theme: str, _persist: bool = True) -> None:
+        """Switch the application-wide theme to 'dark', 'light', or 'system'.
+
+        For 'system', the OS palette is inspected to determine whether the
+        desktop is currently in dark or light mode, and the matching theme
+        is applied automatically.
+        """
+        self._current_theme = theme
+        app = QApplication.instance()
+
+        # Resolve 'system' → actual OS preference
+        if theme == "system":
+            bg_lightness = app.palette().color(QPalette.ColorRole.Window).lightness()
+            effective = "dark" if bg_lightness < 128 else "light"
+        else:
+            effective = theme
+
+        if effective == "dark":
+            app.setStyleSheet(_DARK_THEME_SS)
+            if hasattr(self, "_toolbar"):
+                self._toolbar.setStyleSheet(_DARK_TOOLBAR_SS)
+            if hasattr(self, "_project_dock"):
+                self._project_dock.setStyleSheet(_DARK_DOCK_SS)
+        else:  # light
+            app.setStyleSheet(_LIGHT_THEME_SS)
+            if hasattr(self, "_toolbar"):
+                self._toolbar.setStyleSheet(_LIGHT_TOOLBAR_SS)
+            if hasattr(self, "_project_dock"):
+                self._project_dock.setStyleSheet(_LIGHT_DOCK_SS)
+
+        if _persist:
+            db_save_theme(theme)
+        if hasattr(self, "_project_panel"):
+            self._project_panel.set_theme(effective)
+
+    # ── Help dialogs ───────────────────────────────────────────────────────
+    def _show_about(self) -> None:
+        """Display the About dialog."""
+        version = getattr(self, "_app_version", "v1.0.0")
+        msg = QMessageBox(self)
+        msg.setWindowTitle("About")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText(
+            "<b>Tool Information</b>"
+        )
+        msg.setInformativeText(
+            f"<table style='font-size:10pt; line-height:1.6;'>"
+            f"<tr><td><b>Program&nbsp;Name</b></td><td>&nbsp;:&nbsp;</td><td>Technical Drawing Viewer </td></tr>"
+            f"<tr><td><b>Developed&nbsp;By</b></td><td>&nbsp;:&nbsp;</td><td>Sriharan Thirumalai</td></tr>"
+            f"<tr><td><b>Mentor</b></td><td>&nbsp;:&nbsp;</td><td>Carlo Lebrun</td></tr>"
+            f"<tr><td><b>Scripted&nbsp;Using</b></td><td>&nbsp;:&nbsp;</td><td>Python</td></tr>"
+            f"<tr><td><b>Version</b></td><td>&nbsp;:&nbsp;</td><td>{version}</td></tr>"
+            f"<tr><td><b>Date</b></td><td>&nbsp;:&nbsp;</td><td>14/04/2026</td></tr>"
+            f"</table>"
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+
+    def _show_help(self) -> None:
+        """Display the Help / Contact dialog."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Help")
+        msg.setIcon(QMessageBox.Icon.Question)
+        msg.setText("<b>Program Assistance</b>")
+        msg.setInformativeText(
+            "<p>For any program-related assistance, please contact <b>Sriharan Thirumalai</b>.</p>"
+            "<table style='font-size:10pt; line-height:1.8;'>"
+            "<tr><td><b>Email</b></td><td>&nbsp;:&nbsp;</td><td>sriharan.thirumalai@italiautomazione.com</td></tr>"
+            "<tr><td><b>Phone</b></td><td>&nbsp;:&nbsp;</td><td>+39 3480380741</td></tr>"
+            "</table>"
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.exec()
+
     def _connect_signals(self):
         self.act_open.triggered.connect(self.open_pdf)
         self.act_close_pdf.triggered.connect(self.close_current_tab)
@@ -7347,6 +8467,8 @@ class PDFViewer(QMainWindow):
             lambda v: self.act_show_projects.setChecked(v))
         self._project_panel.open_file_requested.connect(
             lambda p: self.open_pdf(p, _from_project=True))
+        self._project_panel.export_project_io_requested.connect(
+            self._export_project_io_by_id)
         self.act_save_fdf.triggered.connect(self.save_fdf)
         self.act_save_pdf.triggered.connect(self.save_pdf)
         self.act_exit.triggered.connect(self.close)
@@ -7359,8 +8481,6 @@ class PDFViewer(QMainWindow):
             lambda: self._go_to_page(self._current_tab().pdf_view.pageNavigator().currentPage() + 1))
         self.act_configure.triggered.connect(self.open_config)
         self.act_config_export.triggered.connect(self.open_export_config)
-        self.act_export_signal_types.triggered.connect(self.export_signal_types_xlsx)
-        self.act_import_signal_types.triggered.connect(self.import_signal_types_file)
         self.act_export_xlsx.triggered.connect(self.export_xlsx)
         self.act_export_project_io.triggered.connect(self.export_project_io_list)
         self.act_link_session.triggered.connect(self.open_manual_link)
@@ -7391,7 +8511,7 @@ class PDFViewer(QMainWindow):
 
     def _set_pdf_actions_enabled(self, enabled: bool):
         for act in (self.act_close_pdf, self.act_save_fdf, self.act_save_pdf,
-                    self.act_export_xlsx, self.act_link_session,
+                    self.act_link_session, self.act_export_xlsx,
                     self.act_zoom_in, self.act_zoom_out, self.act_zoom_fit,
                     self.act_prev_page, self.act_next_page):
             act.setEnabled(enabled)
@@ -7403,8 +8523,8 @@ class PDFViewer(QMainWindow):
             self._set_pdf_actions_enabled(False)
             self.act_undo.setEnabled(False)
             self.act_redo.setEnabled(False)
-            self.act_undo.setText("&Undo")
-            self.act_redo.setText("&Redo")
+            self.act_undo.setText("↩\nUndo")
+            self.act_redo.setText("↪\nRedo")
             self.page_label.setText("Page: - / -")
             self.statusBar().showMessage("Open a PDF to begin.")
         else:
@@ -7504,7 +8624,7 @@ class PDFViewer(QMainWindow):
     def _build_home_screen(self) -> QWidget:
         # ── Edit these lines ──────────────────────────────────────────────
         APP_VERSION = "v1.0.0"
-        LOGO_PATH   = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.png")
+        LOGO_PATH   = resource_path("logo.png")
         LOGO_WIDTH  = 180
 
         self._app_version = APP_VERSION
@@ -7537,7 +8657,6 @@ class PDFViewer(QMainWindow):
         logo_label = QLabel()
         logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if os.path.isfile(LOGO_PATH):
-            from PySide6.QtGui import QPixmap
             pix = QPixmap(LOGO_PATH)
             logo_label.setPixmap(
                 pix.scaledToWidth(LOGO_WIDTH, Qt.TransformationMode.SmoothTransformation))
@@ -7740,14 +8859,17 @@ class PDFViewer(QMainWindow):
         """
         self._push_undo(ts)
         
-        # Get the count from tag_parts
-        count = tag_parts.get("count", 1)
+        # User-level multiplier (how many times the whole composition is placed).
+        # CompositionPlacementDialog does not set this, so it defaults to 1.
+        multiplier = int(tag_parts.get("count", 1) or 1)
         
-        # Build the composition text with multiplied counts
+        # Build the composition text using each signal's configured count.
         signal_counts = {}
         for sig in composition.get("signals", []):
             sig_type = sig.get("signal_type", "")
-            signal_counts[sig_type] = signal_counts.get(sig_type, 0) + count
+            if sig_type:
+                sig_count = int(sig.get("count", 1) or 1)
+                signal_counts[sig_type] = signal_counts.get(sig_type, 0) + sig_count * multiplier
         
         # Build display text
         parts = []
@@ -7762,7 +8884,7 @@ class PDFViewer(QMainWindow):
             "composition_id": composition_id,
             "is_composition": True,
             "tag_parts": tag_parts,
-            "count": count,
+            "count": multiplier,
             "page": page,
             "pdf_x": pdf_x,
             "pdf_y": pdf_y,
@@ -7826,8 +8948,8 @@ class PDFViewer(QMainWindow):
         r = len(ts.redo_stack)
         self.act_undo.setEnabled(bool(u))
         self.act_redo.setEnabled(bool(r))
-        self.act_undo.setText(f"&Undo  ({u})" if u else "&Undo")
-        self.act_redo.setText(f"&Redo  ({r})" if r else "&Redo")
+        self.act_undo.setText(f"↩\nUndo ({u})" if u else "↩\nUndo")
+        self.act_redo.setText(f"↪\nRedo ({r})" if r else "↪\nRedo")
 
     def _restore_snapshot(self, ts: TabState, snapshot: list):
         ts.io_list.clear()
@@ -8004,13 +9126,13 @@ class PDFViewer(QMainWindow):
                 f"{_count_leaves(new_groups)} signal types")
     
     def open_signal_compositions_config(self):
-        """Open signal compositions config for the current project."""
+        """Open signal typicals config for the current project."""
         ts = self._current_tab()
         if not ts:
             QMessageBox.information(
                 self, "No PDF Open",
-                "Please open a PDF file first to configure signal compositions.\n\n"
-                "Signal compositions are managed per project.")
+                "Please open a PDF file first to configure signal typicals.\n\n"
+                "Signal typicals are managed per project.")
             return
         
         # Check if the PDF belongs to a project
@@ -8020,10 +9142,10 @@ class PDFViewer(QMainWindow):
             QMessageBox.information(
                 self, "PDF Not in Project",
                 f"The file '{os.path.basename(ts.pdf_path)}' is not registered in any project.\n\n"
-                "To configure signal compositions:\n"
+                "To configure signal typicals:\n"
                 "1. Create or open a project from the Project Panel\n"
                 "2. Add this PDF to the project\n"
-                "3. Then access signal composition configuration")
+                "3. Then access signal typical configuration")
             return
         
         if len(projects) == 1:
@@ -8035,7 +9157,7 @@ class PDFViewer(QMainWindow):
             choice, ok = QInputDialog.getItem(
                 self, "Select Project",
                 "This PDF belongs to multiple projects.\n"
-                "Configure compositions for:",
+                "Configure typicals for:",
                 names, 0, False)
             if not ok:
                 return
@@ -8046,10 +9168,45 @@ class PDFViewer(QMainWindow):
         owner_id = db_get_or_create_project_owner(project_id)
         
         comp_dlg = SignalCompositionConfigDialog(owner_id, project_name, parent=self)
-        if comp_dlg.exec() == QDialog.DialogCode.Accepted:
+        comp_dlg.exec()
+        # Refresh all open tab overlays so marker labels reflect any changes
+        self._refresh_composition_markers()
+        if comp_dlg.result() == QDialog.DialogCode.Accepted:
             self.statusBar().showMessage(
-                f"Signal compositions configured for '{project_name}'")
+                f"Signal typicals configured for '{project_name}'")
         
+    def _refresh_composition_markers(self) -> None:
+        """Re-calculate the display label for every composition marker in all
+        open tabs and repaint their overlays.  Called after the signal typical
+        config dialog closes so that label changes are visible immediately."""
+        for idx in range(self._tabs.count()):
+            ts = self._tab_state_at(idx)
+            if ts is None:
+                continue
+            changed = False
+            for m in ts.io_list:
+                if not m.get("is_composition") or not m.get("composition_id"):
+                    continue
+                comp = db_load_signal_composition(m["composition_id"])
+                if not comp:
+                    continue
+                tag_parts  = m.get("tag_parts") or {}
+                new_count  = int(tag_parts.get("count", m.get("count", 1)) or 1)
+                signal_counts: dict[str, int] = {}
+                for sig in comp.get("signals", []):
+                    sig_type = sig.get("signal_type", "")
+                    if sig_type:
+                        sig_count = int(sig.get("count", 1) or 1)
+                        signal_counts[sig_type] = (
+                            signal_counts.get(sig_type, 0) + sig_count * new_count)
+                parts = [f"{c}{t}" for t, c in sorted(signal_counts.items())]
+                new_label = " ".join(parts) if parts else comp["title"]
+                if m.get("type") != new_label:
+                    m["type"] = new_label
+                    changed = True
+            if changed:
+                ts.pdf_view._overlay.update()
+
     def open_export_config(self):
         current = db_load_export_columns()
         dlg = ExportColumnConfigDialog(current, parent=self)
@@ -8336,7 +9493,39 @@ class PDFViewer(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
 
-    # ── FDF export ────────────────────────────────────────────────────────
+    def _export_project_io_by_id(self, project_id: int):
+        """Export IO list for a specific project_id (called from project panel context menu)."""
+        projects = db_load_projects()
+        project = next((p for p in projects if p["id"] == project_id), None)
+        if not project:
+            QMessageBox.warning(self, "Project Not Found",
+                                "Could not find the selected project.")
+            return
+        safe_name = "".join(
+            c for c in project["name"] if c.isalnum() or c in " _-")
+        default_name = f"{safe_name}_IO_List.xlsx"
+        out_path = os.path.join(os.path.dirname(DB_PATH), default_name)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export IO List", out_path, "Excel Files (*.xlsx)")
+        if not path:
+            return
+        if not path.lower().endswith(".xlsx"):
+            path += ".xlsx"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        try:
+            export_project_io_list(path, project_id, None)
+            markers = db_load_project_markers(project_id, None)
+            n = len(markers)
+            drawings = len(set(m["file_name"] for m in markers))
+            self.statusBar().showMessage(
+                f"IO List exported: {path}  ({n} marker(s), {drawings} drawing(s))")
+            QMessageBox.information(
+                self, "Export complete",
+                f"IO List exported for <b>{project['name']}</b>.<br>"
+                f"{n} IO marker(s) across {drawings} drawing(s).<br><br>"
+                f"{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export failed", str(e))
     def save_fdf(self):
         ts = self._current_tab()
         if not ts or not ts.io_list:
@@ -8532,7 +9721,11 @@ if __name__ == "__main__":
     # Set the application-wide font with an explicit point size before any
     # widgets are created.
     from PySide6.QtGui import QFont as _AppFont
-    app.setFont(_AppFont("Arial", 9))
+    app.setFont(_AppFont("Montserrat", 9))
+    # Set application icon (taskbar, alt-tab, window chrome)
+    _app_icon_path = resource_path("icon.png")
+    if os.path.isfile(_app_icon_path):
+        app.setWindowIcon(QIcon(_app_icon_path))
     viewer = PDFViewer()
     viewer.show()
     sys.exit(app.exec())
